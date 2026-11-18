@@ -384,7 +384,13 @@ class OllamaBackend(ModelBackend):
 
         read_timeout = min(float(idle), self.request_timeout * (1.5 if think else 1))
         timeouts = httpx.Timeout(connect=30.0, read=read_timeout, write=30.0, pool=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
+        from hub._services.chat.resource_load_transport import staged_chat_transport
+        staged_load = staged_chat_transport()
+        transport_options = ({"trust_env": False, "follow_redirects": False}
+                             if staged_load is not None else {})
+        async with httpx.AsyncClient(timeout=timeouts, **transport_options) as client:
+            if staged_load is not None:
+                staged_load.begin(self, f"{self.base_url}/api/chat", payload)
             try:
                 async with client.stream(
                     "POST", f"{self.base_url}/api/chat", json=payload
@@ -438,8 +444,11 @@ class OllamaBackend(ModelBackend):
                             last_activity = now
                             probes = 0
                             try:
-                                chunk = json.loads(line)
+                                chunk = (staged_load.decode_chunk(line)
+                                         if staged_load is not None else json.loads(line))
                             except ValueError:
+                                if staged_load is not None:
+                                    raise RuntimeError("resource_model_dispatch_unconfirmed") from None
                                 reported_model_invalid = True
                                 continue
                             if "model" in chunk:
@@ -468,7 +477,11 @@ class OllamaBackend(ModelBackend):
                             if chunk.get("done"):
                                 done_reason = chunk.get("done_reason")
                                 completed = True
-                                break
+                                if staged_load is None:
+                                    break
+                                # A staged load is one complete HTTP response.
+                                # Drain to EOF; conflicting tail or read/close
+                                # failure must retain the durable intent.
 
                         if total_cap > 0 and (now - started) > total_cap:
                             return aborted(f"Gesamtdeckel {total_cap}s erreicht")
@@ -491,6 +504,8 @@ class OllamaBackend(ModelBackend):
 
         if not completed:
             return aborted("Ollama-Stream endete ohne Abschlussmarker (done=true)")
+        if staged_load is not None:
+            staged_load.finish()
 
         content = "".join(content_parts)
         if not think and "</think>" in content:

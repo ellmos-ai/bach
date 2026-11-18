@@ -32,6 +32,10 @@ from hub._services.llm.model_backend import (  # noqa: E402
     backend_identifier,
     create_backend,
 )
+from hub import compute_lock as _staged_compute_lock  # noqa: E402
+from hub._services.chat.chat_runtime import ChatRuntime as _StagedChatRuntime  # noqa: E402
+from hub._services.chat.host_inference_gate import HostInferenceGate as _StagedHostInferenceGate  # noqa: E402
+from hub._services.llm import model_backend as _staged_backend  # noqa: E402
 
 
 class _FakeResponse:
@@ -1287,3 +1291,277 @@ def test_tool_arguments_json_string_and_double_encoding_become_object():
 def test_tool_arguments_invalid_forms_stay_non_object(raw):
     # The runtime rejects these as invalid_tool_call; nothing is guessed.
     assert not isinstance(_decode_tool_arguments(raw), dict)
+
+
+# Staged LOAD_PENDING transport regressions: real runtime/gate, simulated HTTP.
+_STAGED_LOAD_MODEL = "fixture:load"
+_STAGED_LOAD_TARGET = {"socket_id": "fixture-socket", "binding_id": "fixture-binding",
+          "agent_id": "fixture-agent", "backend": "ollama", "model": _STAGED_LOAD_MODEL}
+_STAGED_LOAD_TERMINAL = {"model": _STAGED_LOAD_MODEL, "created_at": "2026-11-18T00:00:00Z",
+            "message": {"role": "assistant", "content": ""},
+            "done": True, "done_reason": "load"}
+
+
+def _run_staged_transport(monkeypatch, tmp_path, *, failure=None, terminal=None, staged=True, keep_alive="5m",
+               base_url="http://127.0.0.1:11434", permit_port=11434):
+    """Only HTTP and native authority observations are simulated; ownership is real."""
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BACH_FACKEL_PREFERENCE_PATH", str(tmp_path / "fackel.json"))
+    monkeypatch.setattr(_staged_backend, "limit", lambda key: {
+        "BACH_LLM_IDLE_TIMEOUT": 1, "BACH_LLM_IDLE_GRACE": 0, "BACH_LLM_TOTAL_CAP": 10,
+    }[key])
+    backend = OllamaBackend(base_url=base_url,
+                            default_model=_STAGED_LOAD_MODEL, num_ctx=4096)
+    events = []
+    live = [True]
+    gate = _StagedHostInferenceGate()
+    final = dict(_STAGED_LOAD_TERMINAL if terminal is None else terminal)
+
+    keep_alive_value = keep_alive
+    def keep_alive(**_kwargs):
+        events.append("backend-preparation")
+        if failure == "revoke":
+            live[0] = False
+        return keep_alive_value
+    monkeypatch.setattr(_staged_compute_lock, "get_effective_keep_alive", keep_alive)
+
+    original_begin = gate.begin_dispatch
+    def begin_dispatch(*args):
+        handle = original_begin(*args)
+        if failure == "revoke-intent":
+            live[0] = False
+        return handle
+    monkeypatch.setattr(gate, "begin_dispatch", begin_dispatch)
+
+    def permission(*, dispatch_handle=None):
+        if dispatch_handle is not None:
+            held = _StagedHostInferenceGate.current_owner()._check_owned_record()
+            assert held.dispatch_handle is dispatch_handle
+            assert "dispatch_pending" in held.record
+        events.append("native-permission")
+        if not live[0]:
+            raise RuntimeError("fixture model load permission revoked")
+
+    class ResponseStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            if failure == "cancel":
+                raise asyncio.CancelledError
+            if failure == "timeout":
+                raise httpx.ReadTimeout("fixture missing terminal response")
+            if failure == "eof":
+                yield json.dumps({"model": _STAGED_LOAD_MODEL, "done": False}).encode() + b"\n"
+                return
+            if failure == "malformed":
+                yield b"not-json\n"
+            if failure == "duplicate":
+                yield b'{"done":false,"done":true}\n'
+            if failure == "nonobject":
+                yield b'[]\n'
+            if failure == "nonfinite":
+                yield b'{"duration":NaN}\n'
+            yield json.dumps(final).encode() + b"\n"
+            if failure == "trailing":
+                yield json.dumps({**final, "model": "another:model"}).encode() + b"\n"
+            if failure == "timeout-after-terminal":
+                raise httpx.ReadTimeout("fixture truncated terminal HTTP body")
+
+        async def aclose(self):
+            if failure == "close":
+                raise httpx.ReadError("fixture stream close failed")
+
+    async def provider(request):
+        assert request.method == "POST" and request.url.path == "/api/chat"
+        payload = json.loads(request.content)
+        assert payload["model"] == _STAGED_LOAD_MODEL and payload["messages"] == []
+        events.append(("post", gate.status()["dispatch_pending"]))
+        return httpx.Response(200, stream=ResponseStream())
+
+    original_client = httpx.AsyncClient
+    def client(**kwargs):
+        events.append({"client_options": dict(kwargs)})
+        kwargs.pop("trust_env", None)
+        return original_client(transport=httpx.MockTransport(provider),
+                               trust_env=False, **kwargs)
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    ticket = {"permit": {"spec": {"model": _STAGED_LOAD_MODEL, "digest": "a" * 64,
+                "context_tokens": 4096, "port": permit_port}}}
+    grant = {"backend": backend, "model": _STAGED_LOAD_MODEL, "deadline": None, "started": False,
+             "check": lambda: None, "result": None, "resource_load_ticket": ticket,
+             "resource_load_check": permission}
+    if not staged:
+        grant.pop("resource_load_ticket")
+        grant.pop("resource_load_check")
+
+    async def scenario():
+        async with gate.turn("fixture", "background", model_target=_STAGED_LOAD_TARGET):
+            async def dispatch():
+                if failure == "fabricated":
+                    return {"content": "fixture callback returned without a transport"}
+                if failure == "copied-owner":
+                    return await asyncio.create_task(backend.chat([], think=False, model=_STAGED_LOAD_MODEL))
+                return await backend.chat([], think=False, model=_STAGED_LOAD_MODEL)
+            try:
+                await _StagedChatRuntime._supervised_warmup_dispatch(
+                    SimpleNamespace(), dispatch, {}, grant)
+            except (asyncio.CancelledError, RuntimeError):
+                pass
+    asyncio.run(scenario())
+    return events, gate, ticket, grant
+
+
+def test_revoked_staged_grant_after_backend_preparation_never_posts(monkeypatch, tmp_path):
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, failure="revoke")
+    assert not [event for event in events if isinstance(event, tuple)]
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+
+
+def test_staged_load_persists_intent_before_post_and_clears_only_terminal(monkeypatch, tmp_path):
+    events, gate, ticket, grant = _run_staged_transport(monkeypatch, tmp_path)
+    assert ("post", True) in events
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is True
+    assert grant["result"]["state"] == "loaded"
+
+
+@pytest.mark.parametrize("failure", ["cancel", "timeout", "eof", "malformed",
+                                     "duplicate", "nonobject", "nonfinite",
+                                     "trailing", "timeout-after-terminal", "close"])
+def test_uncertain_staged_transport_keeps_durable_intent(monkeypatch, tmp_path, failure):
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, failure=failure)
+    assert ("post", True) in events
+    assert gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+    async def successor():
+        async with _StagedHostInferenceGate().turn("cleanup", "background", model_target=_STAGED_LOAD_TARGET):
+            pytest.fail("an unsettled POST must block a later cleanup owner")
+    with pytest.raises(RuntimeError, match="Inferenzdispatch noch ungeklärt"):
+        asyncio.run(successor())
+
+
+@pytest.mark.parametrize("field,value", [
+    ("done", "true"), ("done", 1), ("done_reason", "stop"),
+    ("model", "different:model"), ("model", None),
+])
+def test_invalid_staged_terminal_never_clears_intent(monkeypatch, tmp_path, field, value):
+    terminal = {**_STAGED_LOAD_TERMINAL, field: value}
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, terminal=terminal)
+    assert ("post", True) in events
+    assert gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+
+
+def test_staged_transport_disables_environment_proxies_and_redirects(monkeypatch, tmp_path):
+    events, _, ticket, _ = _run_staged_transport(monkeypatch, tmp_path)
+    options = next(event["client_options"] for event in events if isinstance(event, dict))
+    assert options.get("trust_env") is False
+    assert options.get("follow_redirects") is False
+    assert ticket.get("transport_terminal") is True
+
+
+@pytest.mark.parametrize("failure", ["fabricated", "copied-owner"])
+def test_only_actual_owner_transport_can_confirm_staged_completion(monkeypatch, tmp_path, failure):
+    events, gate, ticket, grant = _run_staged_transport(monkeypatch, tmp_path, failure=failure)
+    assert not [event for event in events if isinstance(event, tuple)]
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+    assert (grant["result"] or {}).get("state") != "loaded"
+
+
+def test_ordinary_warmup_keeps_existing_transport_behavior(monkeypatch, tmp_path):
+    events, gate, ticket, grant = _run_staged_transport(monkeypatch, tmp_path, staged=False)
+    options = next(event["client_options"] for event in events if isinstance(event, dict))
+    assert "trust_env" not in options and "follow_redirects" not in options
+    assert ("post", False) in events
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+    assert grant["result"]["state"] == "loaded"
+
+
+def test_grant_revoked_while_persisting_intent_never_posts(monkeypatch, tmp_path):
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, failure="revoke-intent")
+    assert not [event for event in events if isinstance(event, tuple)]
+    assert gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+
+
+@pytest.mark.parametrize("keep_alive", [0, 0.0, False, None, "0", "0s", "0m0s", "-0s", "ambiguous"])
+def test_staged_load_cannot_authorize_zero_or_ambiguous_keep_alive(monkeypatch, tmp_path, keep_alive):
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, keep_alive=keep_alive)
+    assert not [event for event in events if isinstance(event, tuple)]
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+
+
+@pytest.mark.parametrize("keep_alive", [300, "1h30m"])
+def test_staged_load_preserves_understood_positive_keep_alive(monkeypatch, tmp_path, keep_alive):
+    events, gate, ticket, _ = _run_staged_transport(monkeypatch, tmp_path, keep_alive=keep_alive)
+    assert ("post", True) in events
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is True
+
+
+@pytest.mark.parametrize("binding", ["own", "missing", "foreign", "stale"])
+def test_native_recheck_accepts_only_exact_current_dispatch_handle(monkeypatch, tmp_path, binding):
+    from hub._services import ocean_resources_provider
+    from hub._services.chat import local_resource_reserve, resource_load_pending
+    from hub._services.chat.resource_model_port import GuardedModelPort, ModelReturnUnconfirmed
+
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "native"))
+    spec = SimpleNamespace(model=_STAGED_LOAD_MODEL, digest="a" * 64, port=11434, fingerprint=lambda: "f" * 64)
+    process = {"pid": 10, "created_at": 2.0, "boot_time": 1.0}
+    policy = resource_load_pending.REVIEWED_POLICY_SHA256
+    monkeypatch.setattr(local_resource_reserve, "read_policy", lambda: ({}, policy))
+    monkeypatch.setattr(resource_load_pending, "native_model_process", lambda _: (process, 10))
+    monkeypatch.setattr(ocean_resources_provider, "load_verified", lambda _: {
+        "ocean_resources.model_dispatch": SimpleNamespace(require_dispatch_permission=lambda *a, **kw: None)})
+    permit = {"phase": "MAY_LOAD", "workload_sha256": spec.fingerprint(), "writer_readback": {},
+              "policy_sha256": policy, "deadline": 110.0, "baseline": {"process": process}}
+    authority = {key: "fixture" for key in ("host_id", "authority_id", "client_id")}
+    reads = []
+    def provider_readback(_, path, payload):
+        assert payload is None
+        reads.append(path)
+        return {"/api/version": {"version": "0.33.3"},
+                "/api/tags": {"models": [{"name": spec.model, "digest": spec.digest}]},
+                "/api/ps": {"models": []}}[path]
+    port = GuardedModelPort(transport=provider_readback, clock=lambda: 100.0)
+    gate = _StagedHostInferenceGate()
+
+    async def scenario():
+        async with gate.turn("fixture", "background", model_target=_STAGED_LOAD_TARGET):
+            handle = gate.begin_dispatch("a" * 64, _STAGED_LOAD_TARGET)
+            stale = handle
+            if binding == "stale":
+                gate.finish_dispatch(handle)
+                handle = gate.begin_dispatch("b" * 64, _STAGED_LOAD_TARGET)
+            kwargs = {} if binding == "missing" else {
+                "dispatch_handle": handle if binding == "own" else stale if binding == "stale" else object()}
+            if binding == "own":
+                port.check_load_under_owner(spec, permit, authority=authority, **kwargs)
+                assert reads == ["/api/version", "/api/tags", "/api/ps"]
+            else:
+                with pytest.raises(ModelReturnUnconfirmed):
+                    port.check_load_under_owner(spec, permit, authority=authority, **kwargs)
+                assert reads == []
+            assert gate.status()["dispatch_pending"]
+            gate.finish_dispatch(handle)
+            with pytest.raises(ModelReturnUnconfirmed):
+                port.check_load_under_owner(spec, permit, authority=authority, dispatch_handle=handle)
+    asyncio.run(scenario())
+
+
+def test_explicit_zero_port_cannot_match_default_port_permit(monkeypatch, tmp_path):
+    events, gate, ticket, _ = _run_staged_transport(
+        monkeypatch, tmp_path, base_url="http://127.0.0.1:0", permit_port=80)
+    assert not [event for event in events if isinstance(event, tuple)]
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is not True
+
+
+def test_omitted_port_matches_exact_http_default_permit(monkeypatch, tmp_path):
+    events, gate, ticket, _ = _run_staged_transport(
+        monkeypatch, tmp_path, base_url="http://127.0.0.1", permit_port=80)
+    assert ("post", True) in events
+    assert not gate.status()["dispatch_pending"]
+    assert ticket.get("transport_terminal") is True
