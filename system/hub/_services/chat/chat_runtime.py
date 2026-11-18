@@ -571,7 +571,20 @@ MAX_TOOL_CALLS_PER_ANSWER = 16  # measured: 5-6 per answer on the Mac Studio, 07
 MAX_TOOL_DENIALS_PER_RUN = 4
 _NON_DENIAL_TOOL_REASONS = frozenset({"resource_not_found", "state_conflict", "no_updates"})
 
+from .http_request_control import (
+    HttpRequestDisconnected, check_http_request, current_http_request,
+)
+
+
+def _http_disconnect_answer(partial=""):
+    text = "HTTP-Anfrage wurde vom aufrufenden Gerät beendet."
+    if partial:
+        text += "\n\n[Teilantwort vor dem Abbruch]\n" + partial
+    return FailedAnswer(text, reason_code="http_disconnect")
+
+
 _SAFE_FAILURE_REASON_CODES = frozenset({
+    "http_disconnect",
     "cloud_call_retry_exhausted",
     "completion_reserve_context_exhausted",
     "handoff_context_too_large",
@@ -1468,7 +1481,10 @@ class ChatRuntime(_ModuleChatRuntime):
             log.warning("Chat-Persistenz konnte nicht geschrieben werden: %s", exc)
 
     def _persist_session(self, chat_id: str, session: ChatSession) -> None:
+        http_request = current_http_request()
         if self.session_store is None:
+            if http_request is not None:
+                raise RuntimeError("HTTP-Transkript hat keinen dauerhaften Speicher")
             return
         try:
             name = _session_name(chat_id, session)
@@ -1480,6 +1496,8 @@ class ChatRuntime(_ModuleChatRuntime):
             self._persistence_error = None
         except Exception as exc:
             self._persistence_error = str(exc)
+            if http_request is not None:
+                raise RuntimeError("HTTP-Transkript konnte nicht dauerhaft gespeichert werden") from exc
             if getattr(session, "profile_binding", None) is not None:
                 self.sessions.pop(chat_id, None)
                 raise RuntimeError("Profiltranskript konnte nicht dauerhaft gespeichert werden") from exc
@@ -2518,6 +2536,7 @@ class ChatRuntime(_ModuleChatRuntime):
             backend, kwargs.get("model"),
             turn_context[0] if turn_context else None)
         def check_binding():
+            check_http_request()
             if warmup is not None:
                 problem = warmup["check"]()
                 if problem:
@@ -2753,7 +2772,21 @@ class ChatRuntime(_ModuleChatRuntime):
                                     pass
                     else:
                         mark_model_dispatch()
-                        result = await backend.chat(*args, **kwargs)
+                        http_request = check_http_request()
+                        if http_request is None:
+                            result = await backend.chat(*args, **kwargs)
+                        else:
+                            instrumented = type(backend) is OllamaBackend
+                            call_kwargs = dict(kwargs)
+                            http_request.provider_start()
+                            if instrumented:
+                                call_kwargs["cancel_event"] = http_request.cancel_event
+                                call_kwargs["lifecycle_observer"] = http_request.observe
+                            result = await backend.chat(*args, **call_kwargs)
+                            http_request.provider_returned(result, instrumented=instrumented)
+                            if http_request.stop_event.is_set():
+                                result = {**result, "error": "HTTP-Anfrage wurde beendet",
+                                          "reason_code": "http_disconnect", "tool_calls": None}
             except BaseException as exc:
                 if handle is not None:
                     try:
@@ -3084,6 +3117,7 @@ class ChatRuntime(_ModuleChatRuntime):
     @staticmethod
     async def _enter_chat_turn(gate: _ChatTurnGate) -> None:
         while True:
+            check_http_request()
             with gate.condition:
                 if not gate.clearing:
                     gate.active_turns += 1
@@ -3095,6 +3129,7 @@ class ChatRuntime(_ModuleChatRuntime):
     @staticmethod
     async def _enter_profile_turn(gate: _ChatTurnGate, *, deadline=None) -> None:
         while True:
+            check_http_request()
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("Foreground warmup budget exhausted")
             with gate.condition:
@@ -3377,6 +3412,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         # Jeder lokale Modellaufruf nutzt _chat_with_compute_turn. Das Gate
         # wird nach jeder Inferenz freigegeben, damit ein wartender Vordergrund-
         # Chat vor der nächsten Hintergrund-Toolrunde rechnen kann.
+        http_request = check_http_request()
         known_session = self.sessions.get(chat_id)
         selected_backend = (
             backend
@@ -3441,112 +3477,126 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         context_limit = self._context_limit_for_backend(selected_backend, selected_model)
         session.last_active = time.time()
         session.messages.append({"role": "user", "content": text})
+        if http_request is not None:
+            http_request.accepted = True
 
-        active_limit = context_limit
-        summarize_thresh = self.SUMMARIZE_THRESHOLD if active_limit <= 32768 else self.SUMMARIZE_THRESHOLD * 4
-        max_msgs = self.MAX_MESSAGES if active_limit <= 32768 else self.MAX_MESSAGES * 2
+        try:
+            active_limit = context_limit
+            summarize_thresh = self.SUMMARIZE_THRESHOLD if active_limit <= 32768 else self.SUMMARIZE_THRESHOLD * 4
+            max_msgs = self.MAX_MESSAGES if active_limit <= 32768 else self.MAX_MESSAGES * 2
 
-        total = sum(len(m.get("content", "")) for m in session.messages)
-        if total > summarize_thresh or len(session.messages) > max_msgs:
-            capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
-            if capability_error is not None:
-                session.messages.append({"role": "assistant", "content": capability_error})
-                self._persist_session(chat_id, session)
-                return capability_error
-            await self._summarize(
-                session,
-                backend=selected_backend,
-                model=selected_model,
-            )
-
-        bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
-        custom_prompt = getattr(session, "custom_system_prompt", "")
-        sys_prompt = custom_prompt or self.build_system_prompt(session)
-        sys_prompt, extracted_volatile = _split_volatile_system_prompt(sys_prompt)
-        late_context_parts: list[str] = list(extracted_volatile)
-        if not custom_prompt or (
-            session.profile_binding is not None and not getattr(session, "system_slot_id", None)
-        ):
-            status_line = _session_status_line(session)
-            if status_line not in late_context_parts:
-                late_context_parts.insert(0, status_line)
-        if bach_ctx and not custom_prompt:
-            late_context_parts.append(f"{BACH_CONTEXT_MARKER}\n{bach_ctx}")
-        legacy_memory_hook = session.profile_binding is None and not custom_prompt
-        configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
-        if legacy_memory_hook or configured_memory_hook:
-            # Assemble the persona first, then evaluate the existing hook once.
-            # Only a native slot reader can opt profile/custom-prompt sessions in.
-            hook_ctx = self._get_memory_hook_context(text, chat_id)
-            if hook_ctx:
-                late_context_parts.append(f"--- MEMORY-HOOK ---\n{hook_ctx}")
-        if session.allow_tools is False:
-            sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
-
-        msgs = [{"role": "system", "content": sys_prompt}] + self._messages_for_backend(
-            session.messages
-        )
-        if late_context_parts:
-            msgs.append({"role": "user", "content": "\n\n".join(late_context_parts)})
-
-        if getattr(selected_backend, "manages_own_tools", False):
-            if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
-                msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
-            capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
-            if capability_error is not None:
-                session.messages.append({"role": "assistant", "content": capability_error})
-                self._persist_session(chat_id, session)
-                return capability_error
-            try:
-                result = await self._chat_with_compute_turn(
-                    selected_backend,
-                    msgs, think=session.think, model=selected_model
+            total = sum(len(m.get("content", "")) for m in session.messages)
+            if total > summarize_thresh or len(session.messages) > max_msgs:
+                capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
+                if capability_error is not None:
+                    session.messages.append({"role": "assistant", "content": capability_error})
+                    self._persist_session(chat_id, session)
+                    return capability_error
+                await self._summarize(
+                    session,
+                    backend=selected_backend,
+                    model=selected_model,
                 )
-                answer = _managed_backend_answer(result)
-                resolved = result.get("model") if isinstance(result, dict) else None
-                if (not FailedAnswer.looks_like(answer) and isinstance(resolved, str) and resolved.strip()):
-                    session.resolved_model = resolved
-                    if chat_id:
-                        try:
-                            from hub._services.chat.slots_config import update_slot
-                            update_slot(str(chat_id), {"resolved_model": resolved})
-                        except Exception:
-                            pass
-            except Exception as e:
-                answer = FailedAnswer.from_exception(e)
-        else:
-            tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
-            grants = _effective_tool_grants(session)
-            if grants is not None:
-                tools = [tool for tool in tools if tool["function"]["name"] in grants]
-            tools = _deterministic_tools(tools)
-            answer = await self._tool_loop(
-                msgs,
-                session,
-                tools,
-                backend=selected_backend,
-                model=selected_model,
-                context_limit=context_limit,
+
+            bach_ctx = "" if session.profile_binding else self._get_bach_context(text)
+            custom_prompt = getattr(session, "custom_system_prompt", "")
+            sys_prompt = custom_prompt or self.build_system_prompt(session)
+            sys_prompt, extracted_volatile = _split_volatile_system_prompt(sys_prompt)
+            late_context_parts: list[str] = list(extracted_volatile)
+            if not custom_prompt or (
+                session.profile_binding is not None and not getattr(session, "system_slot_id", None)
+            ):
+                status_line = _session_status_line(session)
+                if status_line not in late_context_parts:
+                    late_context_parts.insert(0, status_line)
+            if bach_ctx and not custom_prompt:
+                late_context_parts.append(f"{BACH_CONTEXT_MARKER}\n{bach_ctx}")
+            legacy_memory_hook = session.profile_binding is None and not custom_prompt
+            configured_memory_hook = getattr(session, "_trusted_memory_hook_opt_in", False) is True
+            if legacy_memory_hook or configured_memory_hook:
+                # Assemble the persona first, then evaluate the existing hook once.
+                # Only a native slot reader can opt profile/custom-prompt sessions in.
+                hook_ctx = self._get_memory_hook_context(text, chat_id)
+                if hook_ctx:
+                    late_context_parts.append(f"--- MEMORY-HOOK ---\n{hook_ctx}")
+            if session.allow_tools is False:
+                sys_prompt += "\n\n[CAPABILITY-GATE: Keine Werkzeuge verfügbar. Antworte ohne Tool-Aufrufe.]"
+
+            msgs = [{"role": "system", "content": sys_prompt}] + self._messages_for_backend(
+                session.messages
             )
-        answer = _classify_successful_answer(answer)
-        completed_task_ids = ()
-        if self._compute_turn_context.get() == (str(chat_id), "background") and not isinstance(answer, FailedAnswer):
-            completed_task_ids = self.get_last_task_completion_receipts(chat_id)
-        if completed_task_ids:
-            answer = SuccessfulAnswer(answer)
-            answer.completed_task_ids = completed_task_ids
-        session.messages.append({
-            "role": "assistant",
-            "content": answer,
-            FailedAnswer.STATUS_KEY: (
-                FailedAnswer.STATUS_FAILED
-                if isinstance(answer, FailedAnswer)
-                else FailedAnswer.STATUS_SUCCESS
-            ),
-            **({"completed_task_ids": list(completed_task_ids)} if completed_task_ids else {}),
-        })
-        self._persist_session(chat_id, session)
-        return answer
+            if late_context_parts:
+                msgs.append({"role": "user", "content": "\n\n".join(late_context_parts)})
+
+            if getattr(selected_backend, "manages_own_tools", False):
+                if session.allow_tools is True and self._compute_turn_context.get() == (str(chat_id), "background"):
+                    msgs.append({"role": "user", "content": SELF_DECOMPOSE_INSTRUCTION})
+                capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
+                if capability_error is not None:
+                    session.messages.append({"role": "assistant", "content": capability_error})
+                    self._persist_session(chat_id, session)
+                    return capability_error
+                try:
+                    result = await self._chat_with_compute_turn(
+                        selected_backend,
+                        msgs, think=session.think, model=selected_model
+                    )
+                    answer = _managed_backend_answer(result)
+                    resolved = result.get("model") if isinstance(result, dict) else None
+                    if (not FailedAnswer.looks_like(answer) and isinstance(resolved, str) and resolved.strip()):
+                        session.resolved_model = resolved
+                        if chat_id:
+                            try:
+                                from hub._services.chat.slots_config import update_slot
+                                update_slot(str(chat_id), {"resolved_model": resolved})
+                            except Exception:
+                                pass
+                except Exception as e:
+                    answer = FailedAnswer.from_exception(e)
+            else:
+                tools = tools_for_mode(session.mode, bound_worker=session.worker_task_binding is not None) if (self.max_tool_rounds > 0 and session.allow_tools is True) else []
+                grants = _effective_tool_grants(session)
+                if grants is not None:
+                    tools = [tool for tool in tools if tool["function"]["name"] in grants]
+                tools = _deterministic_tools(tools)
+                answer = await self._tool_loop(
+                    msgs,
+                    session,
+                    tools,
+                    backend=selected_backend,
+                    model=selected_model,
+                    context_limit=context_limit,
+                )
+        except HttpRequestDisconnected:
+            answer = _http_disconnect_answer(http_request.partial if http_request else "")
+
+        def persist_answer(disconnected):
+            nonlocal answer
+            if disconnected:
+                answer = _http_disconnect_answer(http_request.partial)
+            answer = _classify_successful_answer(answer)
+            completed_task_ids = ()
+            if self._compute_turn_context.get() == (str(chat_id), "background") and not isinstance(answer, FailedAnswer):
+                completed_task_ids = self.get_last_task_completion_receipts(chat_id)
+            if completed_task_ids:
+                answer = SuccessfulAnswer(answer)
+                answer.completed_task_ids = completed_task_ids
+            session.messages.append({
+                "role": "assistant",
+                "content": answer,
+                FailedAnswer.STATUS_KEY: (
+                    FailedAnswer.STATUS_FAILED
+                    if isinstance(answer, FailedAnswer)
+                    else FailedAnswer.STATUS_SUCCESS
+                ),
+                **({"completed_task_ids": list(completed_task_ids)} if completed_task_ids else {}),
+            })
+            self._persist_session(chat_id, session)
+            return answer
+
+        if http_request is not None:
+            return http_request.finalize(persist_answer)
+        return persist_answer(False)
 
     async def _tool_loop(self, msgs: list, session: ChatSession,
                          tools: list, *, backend=None, model: str = "",
@@ -3897,6 +3947,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             round_num += 1
             session.tool_round = round_num
             for i, tc in enumerate(tool_calls):
+                check_http_request()
                 capability_error = self._worker_backend_gate(session, selected_backend, selected_model)
                 if capability_error is not None:
                     session.current_tool = ""
@@ -3943,6 +3994,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     return FailedAnswer("Werkzeug ist für diesen Agenten nicht freigegeben")
                 tool_kwargs = _tool_dispatch_kwargs(session, self.agent_operations)
                 def dispatch_tool(name, arguments):
+                    check_http_request()
                     if reserve_denied:
                         return "BLOCKIERT: In der Abschlussreserve sind nur bestätigbare Task-Abschlussaktionen erlaubt."
                     if name == REQUEST_TOOLS and binding is not None:
@@ -3970,6 +4022,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         acknowledge_normal_tool_result,
                         execute_normal_tool,
                     )
+                    check_http_request()
                     traced_outcome = execute_normal_tool(
                         binding, t_name, t_args,
                         dispatch_tool,

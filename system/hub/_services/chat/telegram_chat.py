@@ -523,6 +523,11 @@ _WORKER_STOP_WAIT_SECONDS = 2.0
 _WORKER_CONTROLS: Dict[str, _WorkerControl] = {}
 _WORKER_EXECUTIONS: Dict[str, _WorkerControl] = {}
 _WORKER_SERVICE_INSTANCE = uuid.uuid4().hex
+from hub._services.chat.http_request_control import (
+    HttpRequestRegistry, HttpRequestBindingError, HttpRequestDisconnected,
+)
+_HTTP_REQUESTS = HttpRequestRegistry(
+    _WORKER_SERVICE_INSTANCE, lambda chat_id: _resolve_slot_for_chat(chat_id))
 
 
 @dataclass(frozen=True)
@@ -8394,6 +8399,143 @@ class ControlHandler(BaseHTTPRequestHandler):
         else:
             self._json({"error": "Not found"}, 404)
 
+    def _chat_post(self, body, *, http_request=None):
+        if http_request is not None:
+            http_request.check()
+        prompt = body.get("prompt", "")
+        chat_id = body.get("chat_id", "api-delegate")
+        try:
+            agent_id = _optional_agent_id(body.get("agent_id"))
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, 400)
+            return
+        depth = int(self.headers.get("X-Delegation-Depth", "0"))
+        if not prompt:
+            self._json({"error": "prompt erforderlich"}, 400)
+            return
+        if depth >= 2:
+            self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
+            return
+        try:
+            agent_context = _profile_request(agent_id, chat_id)
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, 409)
+            return
+        except Exception:
+            self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
+            return
+        try:
+            selected_backend, model = _snapshot_chat_backend(chat_id)
+        except WorkerBindingError as exc:
+            self._json({"ok": False, "error": str(exc)}, 503)
+            return
+        except Exception as exc:
+            self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
+            return
+        available, availability_status = _checked_backend_availability(
+            selected_backend,
+            model,
+        )
+        if not available:
+            self._json({
+                "ok": False,
+                "error": f"Backend nicht verfügbar: {availability_status}",
+            }, 503)
+            return
+        capacity = _chat_resource_readiness(selected_backend, model, chat_id=chat_id)
+        load_required = capacity is not None and capacity.get("load_required") is True
+        if capacity is not None and not load_required:
+            self._json({"ok": False, "error": capacity["status"],
+                        **{key: value for key, value in capacity.items() if key != "status"}}, 503)
+            return
+        initial_session = runtime.sessions.get(str(chat_id))
+        warmup_deadline = time.monotonic() + 300.0 if load_required else None
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                if http_request is not None:
+                    http_request.check()
+                if load_required:
+                    warmup_call = runtime.warm_chat_ollama_model(
+                        selected_backend, model, chat_id=chat_id,
+                        slot_reader=lambda: _resolve_slot_for_chat(str(chat_id)),
+                        deadline=warmup_deadline,
+                        **({"stop_event": http_request.stop_event} if http_request else {}))
+                    warmup = loop.run_until_complete(
+                        http_request.run(warmup_call, warmup=True) if http_request else warmup_call)
+                    if http_request is not None:
+                        http_request.check()
+                    state = warmup.get("state") if isinstance(warmup, dict) else "model_wait"
+                    if isinstance(warmup, dict) and type(warmup.get("_deadline")) in (int, float):
+                        warmup_deadline = min(warmup_deadline, warmup["_deadline"])
+                    if time.monotonic() >= warmup_deadline:
+                        state = "warmup_timeout"
+                    if state not in {"loaded", "resident"}:
+                        known = {"warmup_busy", "cold_start_aborted", "capacity_wait", "model_wait",
+                                 "slot_unverified", "slot_changed", "session_changed", "binding_changed",
+                                 "task_bound", "fackel_compute", "compute_locked", "stopped",
+                                 "queue_wait_exceeded", "warmup_timeout"}
+                        state = state if state in known else "model_wait"
+                        self._json({"ok": False, "phase": "warmup", "warmup_state": state,
+                                    "reason_code": "chat_warmup_" + state, "retryable": True,
+                                    "error": ("Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."
+                                              if state == "warmup_timeout" else
+                                              "Buddha konnte das Modell nicht sicher laden. Bitte erneut versuchen.")}, 503)
+                        return
+                    # Reset capability precedes this normal capacity probe and
+                    # exact target/session readback; the prompt is still untouched.
+                    capacity = _chat_resource_readiness(
+                        selected_backend, model, chat_id=chat_id, allow_cold_start=False)
+                    current_backend, current_model = _snapshot_chat_backend(chat_id, read_only=True)
+                    if (current_backend is not selected_backend or current_model != model
+                            or runtime.sessions.get(str(chat_id)) is not initial_session):
+                        self._json({"ok": False, "phase": "warmup", "warmup_state": "binding_changed",
+                                    "retryable": True, "error": "Buddhas Modellbindung hat sich beim Laden ge\u00e4ndert."}, 503)
+                        return
+                    if capacity is not None:
+                        self._json({"ok": False, "phase": "warmup", "error": capacity["status"],
+                                    **{key: value for key, value in capacity.items() if key != "status"}}, 503)
+                        return
+                if load_required and time.monotonic() >= warmup_deadline:
+                    self._json({"ok": False, "phase": "warmup", "warmup_state": "warmup_timeout",
+                                "reason_code": "chat_warmup_warmup_timeout", "retryable": True,
+                                "error": "Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."}, 503)
+                    return
+                os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
+                process_kwargs = {"backend": selected_backend, "model": model}
+                if agent_context is not None:
+                    process_kwargs["agent_context"] = agent_context
+                process_call = runtime.process(prompt, chat_id, **process_kwargs)
+                answer = loop.run_until_complete(
+                    http_request.run(process_call) if http_request else process_call)
+                if http_request is not None and http_request.stop_event.is_set():
+                    if not isinstance(answer, FailedAnswer):
+                        answer = FailedAnswer("HTTP-Anfrage wurde beendet", reason_code="http_disconnect")
+            finally:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+                loop.close()
+            if not isinstance(answer, FailedAnswer):
+                response, status = _control_chat_response(answer)
+                if agent_context is not None and status == 200:
+                    response.update({"agent_id": agent_context[0]["agent_id"],
+                        "context_class": "agent-profile", "binding_confirmed": True})
+                self._json(response, status)
+            else:
+                text = str(answer)
+                self._json({"ok": False, "answer": text, "error": text,
+                            **({"reason_code": answer.reason_code} if answer.reason_code else {}),
+                            **({"request": http_request.snapshot()} if http_request else {})}, 502)
+        except (HttpRequestDisconnected, HttpRequestBindingError) as e:
+            self._json({"ok": False, "error": str(e), "reason_code": e.reason_code,
+                        "request": http_request.snapshot()}, 409)
+        except ComputeLocked as e:
+            self._json({"ok": False, "compute_locked": True, "answer": str(e)})
+        except Exception as e:
+            self._json({"error": str(e)}, 500)
+        finally:
+            os.environ.pop("BACH_DELEGATION_DEPTH", None)
+
+
     def do_POST(self):
         if not self._allow_json_post():
             return
@@ -8404,6 +8546,25 @@ class ControlHandler(BaseHTTPRequestHandler):
         body = self._read_body()
         if not isinstance(body, dict):
             self._json({"error": "JSON-Objekt erforderlich"}, 400)
+            return
+
+        if path == "/api/chat/request":
+            try:
+                action = body.get("action")
+                if action == "inspect":
+                    self._json({"ok": True, "version": 1,
+                                "service_instance": _WORKER_SERVICE_INSTANCE})
+                elif action == "prepare":
+                    binding = _HTTP_REQUESTS.prepare(
+                        body.get("device_id"), body.get("chat_id"), body.get("service_instance"))
+                    self._json({"ok": True, "binding": binding})
+                elif action in {"cancel", "status"}:
+                    entry = _HTTP_REQUESTS.get(body.get("binding"))
+                    self._json(entry.cancel() if action == "cancel" else entry.snapshot())
+                else:
+                    self._json({"ok": False, "error": "Unbekannte HTTP-Anfrageaktion"}, 400)
+            except HttpRequestBindingError as exc:
+                self._json({"ok": False, "error": str(exc), "reason_code": exc.reason_code}, 409)
             return
 
         if path == "/api/marblerun/action":
@@ -8503,123 +8664,17 @@ class ControlHandler(BaseHTTPRequestHandler):
             self._json({"ok": True, "fackel_preference": pref})
 
         elif path == "/api/chat":
-            prompt = body.get("prompt", "")
-            chat_id = body.get("chat_id", "api-delegate")
+            http_request = None
             try:
-                agent_id = _optional_agent_id(body.get("agent_id"))
-            except ValueError as exc:
-                self._json({"ok": False, "error": str(exc)}, 400)
-                return
-            depth = int(self.headers.get("X-Delegation-Depth", "0"))
-            if not prompt:
-                self._json({"error": "prompt erforderlich"}, 400)
-                return
-            if depth >= 2:
-                self._json({"error": "Maximale Delegationstiefe erreicht"}, 429)
-                return
-            try:
-                agent_context = _profile_request(agent_id, chat_id)
-            except ValueError as exc:
-                self._json({"ok": False, "error": str(exc)}, 409)
-                return
-            except Exception:
-                self._json({"ok": False, "error": "Profilbindung nicht verifizierbar"}, 503)
-                return
-            try:
-                selected_backend, model = _snapshot_chat_backend(chat_id)
-            except WorkerBindingError as exc:
-                self._json({"ok": False, "error": str(exc)}, 503)
-                return
-            except Exception as exc:
-                self._json({"ok": False, "error": f"Slot-Konfiguration nicht verifizierbar: {exc}"}, 503)
-                return
-            available, availability_status = _checked_backend_availability(
-                selected_backend,
-                model,
-            )
-            if not available:
-                self._json({
-                    "ok": False,
-                    "error": f"Backend nicht verfügbar: {availability_status}",
-                }, 503)
-                return
-            capacity = _chat_resource_readiness(selected_backend, model, chat_id=chat_id)
-            load_required = capacity is not None and capacity.get("load_required") is True
-            if capacity is not None and not load_required:
-                self._json({"ok": False, "error": capacity["status"],
-                            **{key: value for key, value in capacity.items() if key != "status"}}, 503)
-                return
-            initial_session = runtime.sessions.get(str(chat_id))
-            warmup_deadline = time.monotonic() + 300.0 if load_required else None
-            try:
-                loop = asyncio.new_event_loop()
-                try:
-                    if load_required:
-                        warmup = loop.run_until_complete(runtime.warm_chat_ollama_model(
-                            selected_backend, model, chat_id=chat_id,
-                            slot_reader=lambda: _resolve_slot_for_chat(str(chat_id)),
-                            deadline=warmup_deadline))
-                        state = warmup.get("state") if isinstance(warmup, dict) else "model_wait"
-                        if isinstance(warmup, dict) and type(warmup.get("_deadline")) in (int, float):
-                            warmup_deadline = min(warmup_deadline, warmup["_deadline"])
-                        if time.monotonic() >= warmup_deadline:
-                            state = "warmup_timeout"
-                        if state not in {"loaded", "resident"}:
-                            known = {"warmup_busy", "cold_start_aborted", "capacity_wait", "model_wait",
-                                     "slot_unverified", "slot_changed", "session_changed", "binding_changed",
-                                     "task_bound", "fackel_compute", "compute_locked", "stopped",
-                                     "queue_wait_exceeded", "warmup_timeout"}
-                            state = state if state in known else "model_wait"
-                            self._json({"ok": False, "phase": "warmup", "warmup_state": state,
-                                        "reason_code": "chat_warmup_" + state, "retryable": True,
-                                        "error": ("Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."
-                                                  if state == "warmup_timeout" else
-                                                  "Buddha konnte das Modell nicht sicher laden. Bitte erneut versuchen.")}, 503)
-                            return
-                        # Reset capability precedes this normal capacity probe and
-                        # exact target/session readback; the prompt is still untouched.
-                        capacity = _chat_resource_readiness(
-                            selected_backend, model, chat_id=chat_id, allow_cold_start=False)
-                        current_backend, current_model = _snapshot_chat_backend(chat_id, read_only=True)
-                        if (current_backend is not selected_backend or current_model != model
-                                or runtime.sessions.get(str(chat_id)) is not initial_session):
-                            self._json({"ok": False, "phase": "warmup", "warmup_state": "binding_changed",
-                                        "retryable": True, "error": "Buddhas Modellbindung hat sich beim Laden ge\u00e4ndert."}, 503)
-                            return
-                        if capacity is not None:
-                            self._json({"ok": False, "phase": "warmup", "error": capacity["status"],
-                                        **{key: value for key, value in capacity.items() if key != "status"}}, 503)
-                            return
-                    if load_required and time.monotonic() >= warmup_deadline:
-                        self._json({"ok": False, "phase": "warmup", "warmup_state": "warmup_timeout",
-                                    "reason_code": "chat_warmup_warmup_timeout", "retryable": True,
-                                    "error": "Buddhas Modellstart hat das Zeitbudget ausgesch\u00f6pft. Bitte erneut versuchen."}, 503)
-                        return
-                    os.environ["BACH_DELEGATION_DEPTH"] = str(depth + 1)
-                    process_kwargs = {"backend": selected_backend, "model": model}
-                    if agent_context is not None:
-                        process_kwargs["agent_context"] = agent_context
-                    answer = loop.run_until_complete(
-                        runtime.process(prompt, chat_id, **process_kwargs)
-                    )
-                finally:
-                    loop.run_until_complete(loop.shutdown_asyncgens())
-                    loop.close()
-                if not isinstance(answer, FailedAnswer):
-                    response, status = _control_chat_response(answer)
-                    if agent_context is not None and status == 200:
-                        response.update({"agent_id": agent_context[0]["agent_id"],
-                            "context_class": "agent-profile", "binding_confirmed": True})
-                    self._json(response, status)
-                else:
-                    text = str(answer)
-                    self._json({"ok": False, "answer": text, "error": text}, 502)
-            except ComputeLocked as e:
-                self._json({"ok": False, "compute_locked": True, "answer": str(e)})
-            except Exception as e:
-                self._json({"error": str(e)}, 500)
+                if "_http_request" in body:
+                    http_request = _HTTP_REQUESTS.claim(
+                        body["_http_request"], body.get("chat_id", "api-delegate"))
+                self._chat_post(body, http_request=http_request)
+            except (HttpRequestBindingError, HttpRequestDisconnected) as exc:
+                self._json({"ok": False, "error": str(exc), "reason_code": exc.reason_code}, 409)
             finally:
-                os.environ.pop("BACH_DELEGATION_DEPTH", None)
+                if http_request is not None:
+                    http_request.finish()
 
         elif path == "/api/transcribe":
             # Task #1338: Audio-Transkription im Buddha-Chat (Base64-in-JSON).

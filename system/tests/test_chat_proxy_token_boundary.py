@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from gui import server
@@ -76,6 +77,17 @@ class ChatProxyTokenBoundaryTests(unittest.TestCase):
 
             async def request(self, method, url, **kwargs):
                 token = kwargs["headers"].get("authorization")
+                if url.endswith("/chat/request"):
+                    body = kwargs["json"]
+                    self_token = token
+                    assert self_token == "Bearer control-secret"
+                    if body["action"] == "inspect":
+                        return httpx.Response(200, json={"ok": True, "version": 1, "service_instance": "epoch"})
+                    if body["action"] == "prepare":
+                        return httpx.Response(200, json={"ok": True, "binding": {
+                            "device_id": body["device_id"], "chat_id": body["chat_id"],
+                            "service_instance": "epoch", "request_id": "a" * 48,
+                            "cancel_token": "b" * 48, "slot_binding": "c" * 64}})
                 seen.append((method, url, token))
                 if token != "Bearer control-secret":
                     return httpx.Response(401, json={"error": "Control-Token erforderlich"})

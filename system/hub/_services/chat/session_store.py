@@ -132,6 +132,9 @@ class SQLiteChatSessionStore:
             answer_status = item.get("answer_status")
             if role == "assistant" and answer_status in _ALLOWED_ANSWER_STATUSES:
                 normalised_item["answer_status"] = answer_status
+            if (role == "assistant" and answer_status == "failed"
+                    and item.get("reason_code") == "http_disconnect"):
+                normalised_item["reason_code"] = "http_disconnect"
             completed_ids = item.get("completed_task_ids")
             if (
                 role == "assistant" and answer_status == "success"
