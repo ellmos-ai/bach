@@ -570,7 +570,7 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
-    def _task_policy_snapshot(self, task_id):
+    def _task_policy_snapshot(self, task_id, *, _read_only=False):
         """Canonical persisted policy at the same task authority, no ensure_schema."""
         _identity(task_id)
         if self.mode == "remote":
@@ -579,7 +579,8 @@ class TaskLeaseClient:
                 self._raise_denied(task_id, data)
             return data
         from .worker_policy_settings import read_task_policy
-        conn = self._get_local_connection()
+        conn = (self._get_local_observation_connection() if _read_only
+                else self._get_local_connection())
         try:
             return read_task_policy(task_id, conn=conn)
         finally:
@@ -713,7 +714,7 @@ class TaskLeaseClient:
             if self._conn is None:
                 conn.close()
 
-    def _review_candidates(self, limit=100, offset=0):
+    def _review_candidates(self, limit=100, offset=0, *, _read_only=False):
         """Read pending review jobs locally; remote leads carry no private grant authority."""
         if (type(limit) is not int or not 1 <= limit <= 100
                 or type(offset) is not int or offset < 0):
@@ -721,7 +722,8 @@ class TaskLeaseClient:
         if self.mode != "local":
             return {"tasks": [], "has_more": False, "offset": offset}
         from .worker_result_review import list_review_candidates
-        conn = self._get_local_connection()
+        conn = (self._get_local_observation_connection() if _read_only
+                else self._get_local_connection())
         try:
             raw = list_review_candidates(conn, limit=limit, offset=offset)
             has_more = False

@@ -151,10 +151,12 @@ def candidates(private_authority, monkeypatch):
             assert _read_only is True
             return {"tasks": self.tasks[offset:offset+limit], "has_more": offset+limit < len(self.tasks),
                     "offset": offset, "total": len(self.tasks)}
-        def _review_candidates(self, *, limit, offset):
+        def _review_candidates(self, *, limit, offset, _read_only=False):
+            assert _read_only is True
             return {"tasks": self.reviews[offset:offset+limit], "has_more": offset+limit < len(self.reviews),
                     "offset": offset}
-        def _task_policy_snapshot(self, tid):
+        def _task_policy_snapshot(self, tid, *, _read_only=False):
+            assert _read_only is True
             self.policy_reads.append(tid)
             task = next(t for t in self.tasks+self.reviews if t["id"] == tid)
             return {"schema": TASK_SCHEMA, "availability": "available", "task_id": tid,
@@ -175,13 +177,14 @@ def task(tid, **extra):
             "required_model": None, "category": "code", **extra}
 
 
-def preflight(client, **extra):
+def preflight(client, *, with_reviews=True, **extra):
     from hub._services.chat.worker_queue_preflight import preflight_worker_queue
     slot = {"id": "buddha_always_on", "backend": "ollama", "model": "test-model",
             "allowed_repositories": [], "pickup_filter": {"enabled": False}}
     return preflight_worker_queue(client, slot, worker_id="worker@test", host="test",
         generation="test-generation", is_current=lambda: True, stop_event=threading.Event(),
-        review_route={"backend_id": "ollama"}, review_requested_model="test-model", **extra)
+        review_route={"backend_id": "ollama"} if with_reviews else None,
+        review_requested_model="test-model" if with_reviews else None, **extra)
 
 
 def test_preflight_empty_queue_and_all_pages_preserve_deferrals(candidates):
@@ -202,7 +205,7 @@ def test_preflight_reads_per_task_policy_and_never_uses_unknown_policy(candidate
     result = preflight(candidates)
     assert result.eligible is False
     assert result.rejected_counts == {"explicit_slot_required": 1}
-    candidates._task_policy_snapshot = lambda tid: None
+    candidates._task_policy_snapshot = lambda tid, **kwargs: None
     assert preflight(candidates).rejected_counts == {"selection_policy_unavailable": 1}
 
 
@@ -330,3 +333,26 @@ def test_one_unverifiable_review_does_not_hide_a_later_eligible_review(candidate
     result = preflight(candidates)
     assert result.eligible is True and result.task_id == 2
     assert result.rejected_counts == {"ownership": 1}
+
+
+@pytest.mark.parametrize("next_reader", ["policy", "policy_without_reviews", "reviews"])
+def test_preflight_never_recreates_database_lost_between_native_reads(private_authority, next_reader):
+    path, factory = private_authority
+    with sqlite3.connect(path) as conn:
+        conn.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, status TEXT)")
+        if next_reader.startswith("policy"):
+            conn.execute("INSERT INTO tasks VALUES (1, 'pending')")
+    client = factory()
+    original = client.task_candidates
+    preserved = path.with_name("original-preserved.db")
+    def lose_authority_after_page(**kwargs):
+        page = original(**kwargs)
+        assert kwargs["_read_only"] is True
+        path.rename(preserved)
+        return page
+    client.task_candidates = lose_authority_after_page
+    result = preflight(client, with_reviews=next_reader != "policy_without_reviews")
+    assert not path.exists(), "Prospective reader recreated a missing canonical database"
+    assert preserved.is_file()
+    assert result.state == "unavailable"
+    assert result.eligible is False and result.scan_complete is False

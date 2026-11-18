@@ -172,7 +172,8 @@ def preflight_worker_queue(client, slot, *, worker_id, host, generation, is_curr
             raise ValueError("Invalid native candidate")
         seen.add(task["id"])
         candidates += 1
-        pin = WorkerLeaseBinding._effective_selection_policy_snapshot(client, task, profile)
+        pin = WorkerLeaseBinding._effective_selection_policy_snapshot(
+            client, task, profile, _read_only=True)
         reason = ("selection_policy_unavailable" if pin is None else
                   WorkerLeaseBinding._selection_rejection_reason(
                       task, {**slot, "pickup_filter": {"enabled": False}} if review else slot,
@@ -208,7 +209,7 @@ def preflight_worker_queue(client, slot, *, worker_id, host, generation, is_curr
             offset = 0
             while True:
                 current()
-                page = (client._review_candidates(limit=100, offset=offset) if reviews else
+                page = (client._review_candidates(limit=100, offset=offset, _read_only=True) if reviews else
                         client.task_candidates(limit=100, offset=offset, _read_only=True))
                 if (not isinstance(page, dict) or not isinstance(page.get("tasks"), list)
                         or len(page["tasks"]) > 100 or type(page.get("has_more")) is not bool
