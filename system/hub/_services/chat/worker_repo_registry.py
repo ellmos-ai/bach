@@ -661,7 +661,7 @@ def enroll_review_task_repository(client, review_task_id, *, task_version,
         conn.close()
 
 
-def _native_decomposition_receipt(conn, task_id, task_version):
+def _native_decomposition_receipt(conn, task_id, task_version=None):
     """Read the existing native audit relation, never IDs asserted by task text."""
     from hub._services import task_lease as native
     row = conn.execute(
@@ -674,7 +674,7 @@ def _native_decomposition_receipt(conn, task_id, task_version):
         children = record["created_ids"]
         if (not isinstance(record, dict) or record.get("parent_closed") is not False
                 or type(record.get("fence")) is not int or record["fence"] <= 0
-                or record.get("task_version") != task_version
+                or task_version is not None and record.get("task_version") != task_version
                 or not isinstance(children, list) or not 1 <= len(children) <= 100
                 or len(set(children)) != len(children)
                 or any(type(tid) is not int or canonical_task_id(tid) != tid for tid in children)
@@ -683,6 +683,10 @@ def _native_decomposition_receipt(conn, task_id, task_version):
                 or any(type(record.get(key)) is not str
                        or re.fullmatch(r"[0-9a-f]{64}", record[key]) is None
                        for key in ("previous_task_version", "task_version"))):
+            raise ValueError
+        request_digest = record.get("request_sha256")
+        if request_digest is not None and (type(request_digest) is not str
+                or re.fullmatch(r"[0-9a-f]{64}", request_digest) is None):
             raise ValueError
         versions = record.get("child_task_versions")
         if versions is not None and (not isinstance(versions, dict)
@@ -697,12 +701,14 @@ def _native_decomposition_receipt(conn, task_id, task_version):
                                      reason_code="decomposition_receipt_unavailable") from None
 
 
-def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None):
+def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None,
+                                        request_sha256=None, inspect_only=False):
     """Complete an existing native decomposition under fresh holder and child CAS.
 
-    A process restart may use the durable native lease_decompose event, but needs
-    a fresh canonical parent lease and the exact parent/child content pins. It
-    cannot choose other IDs, repositories, source pins or a different database.
+    Completion readback uses the native event and existing trusted bindings.
+    Missing bindings need a matching native operation and exact parent/child
+    content pins under a fresh canonical parent lease. Callers cannot choose
+    other IDs, repositories, source pins or a different database.
     """
     from .worker_lease_binding import WorkerLeaseBinding
     from hub._services import task_lease as native
@@ -714,7 +720,7 @@ def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None):
     version = binding._snapshot["task_version"]
     conn = client._get_local_connection()
     try:
-        receipt = _native_decomposition_receipt(conn, binding.task_id, version)
+        receipt = _native_decomposition_receipt(conn, binding.task_id)
         children = tuple(receipt["created_ids"])
         if expected_child_ids is not None and tuple(expected_child_ids) != children:
             raise RepositoryBindingError("Kind-IDs widersprechen dem nativen Beleg",
@@ -740,10 +746,31 @@ def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None):
             conn.execute("BEGIN IMMEDIATE")
             try:
                 holder_check()
-                fresh = _native_decomposition_receipt(conn, binding.task_id, version)
+                fresh = _native_decomposition_receipt(conn, binding.task_id)
                 if fresh != receipt:
                     raise RepositoryBindingError("Zerlegungsbeleg wurde geändert",
                                                  reason_code="decomposition_receipt_changed")
+                matching_request = (request_sha256 is not None
+                                    and request_sha256 == receipt.get("request_sha256"))
+                all_bound = all(
+                    isinstance(data["tasks"].get(str(child_id)), dict)
+                    and all(data["tasks"][str(child_id)].get(key) == parent[key]
+                            for key in ("repository", "source_sha"))
+                    for child_id in children)
+                if all_bound or inspect_only:
+                    # Existing authority is stable by task ID. Historical content
+                    # versions constrain new publication, not later ordinary edits.
+                    writer.assert_current()
+                    return {"state": "bound" if all_bound else "pending",
+                            "task_id": binding.task_id, "created_ids": children,
+                            "task_version": version, "event_id": receipt["event_id"],
+                            "request_matches": matching_request, "changed": False}
+                if receipt["task_version"] != version:
+                    raise RepositoryBindingError("Parentversion wurde seit der Zerlegung geändert",
+                                                 reason_code="decomposition_receipt_unavailable")
+                if expected_child_ids is None and not matching_request:
+                    raise RepositoryBindingError("Aufruf passt nicht zum nativen Zerlegungsbeleg",
+                                                 reason_code="decomposition_request_changed")
                 changed = False
                 for child_id in children:
                     row = native._row(conn, child_id)
@@ -779,6 +806,7 @@ def inherit_decomposed_task_repositories(binding, *, expected_child_ids=None):
             finally:
                 conn.rollback()
             return {"state": "bound", "task_id": binding.task_id, "created_ids": children,
-                    "task_version": version, "event_id": receipt["event_id"], "changed": changed}
+                    "task_version": version, "event_id": receipt["event_id"],
+                    "request_matches": matching_request, "changed": changed}
     finally:
         conn.close()

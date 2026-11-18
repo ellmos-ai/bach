@@ -1135,6 +1135,22 @@ def update_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence
     return LeaseResult(payload)
 
 
+def _decomposition_request_digest(subtasks, close_parent, sequential):
+    """Correlate a native decomposition retry without storing request text."""
+    if (not isinstance(subtasks, list) or not 1 <= len(subtasks) <= 100
+            or type(close_parent) is not bool or type(sequential) is not bool
+            or any(not isinstance(item, dict) or not isinstance(item.get("title"), str)
+                   or not item["title"].strip() for item in subtasks)):
+        return None
+    normalized = [{**item, "title": item["title"].strip()} for item in subtasks]
+    try:
+        raw = json.dumps({"subtasks": normalized, "close_parent": close_parent,
+                          "sequential": sequential}, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return None
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fence: int,
                     task_version: str, subtasks: list[dict[str, Any]], close_parent: bool = True,
                     sequential: bool = False, config: LeaseConfig | None = None,
@@ -1255,6 +1271,7 @@ def decompose_lease(conn: sqlite3.Connection, task_id: int, *, lease_id: str, fe
         _history(conn, task_id, "lease_decompose", parent.get("claimed_by") or "lease-holder", now,
                  {"fence": fence, "created_ids": created, "reused_ids": reused, "parent_closed": close_parent,
                   "previous_task_version": task_version, "task_version": version,
+                  "request_sha256": _decomposition_request_digest(normalized, close_parent, sequential),
                   "child_task_versions": {str(child_id): task_content_version(_row(conn, child_id))
                                           for child_id in created}})
         payload = {"decomposed": True, "task_id": task_id, "created_ids": created, "reused_ids": reused,

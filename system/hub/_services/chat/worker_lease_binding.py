@@ -1656,14 +1656,6 @@ class WorkerLeaseBinding:
                         raise LeaseProtocolError("Unbekannte Teilaufgabenfelder")
                     if self._capability_denials:
                         raise WorkerTaskManageArgumentError("followup_capability_missing")
-                    pending = self._repository_inheritance_state == "unavailable"
-                    if pending or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[",
-                                            str(self._snapshot.get("description") or "")):
-                        self._inherit_decomposed_subtask_bindings(None)
-                        if (self._repository_inheritance_state == "unavailable"
-                                or self._repository_inheritance_state == "bound"
-                                and (pending or self._repository_inheritance_changed)):
-                            return self._repository_inheritance_message()
                     subtasks = [{key: value for key, value in args.items() if key in fields}]
                     close_parent = False
                 else:
@@ -1675,12 +1667,6 @@ class WorkerLeaseBinding:
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
                         raise WorkerTaskManageArgumentError("decompose_parent")
-                    if (self._decomposition_receipt is not None
-                            or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", str(self._snapshot.get("description") or ""))):
-                        if (self._inherit_decomposed_subtask_bindings(None)
-                                or self._repository_inheritance_state == "unavailable"):
-                            return self._repository_inheritance_message()
-                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
@@ -1692,6 +1678,18 @@ class WorkerLeaseBinding:
                     # a blank one would be stored verbatim and leave the child unpickable.
                     if owner is not None and owner != "" and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
                         raise WorkerTaskManageArgumentError("decompose_assignee")
+                prior_decomposition = (self._decomposition_receipt is not None
+                    or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[",
+                                 str(self._snapshot.get("description") or "")))
+                if prior_decomposition or self._repository_inheritance_state in {"pending", "unavailable"}:
+                    recovery = self._resume_repository_inheritance(
+                        {"subtasks": subtasks, "close_parent": close_parent,
+                         "sequential": args.get("sequential", False)},
+                        allow_new_operation=action == "add")
+                    if recovery is not None:
+                        return recovery
+                    if action == "decompose":
+                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
                                       close_parent=close_parent, sequential=args.get("sequential", False),
@@ -1727,6 +1725,30 @@ class WorkerLeaseBinding:
                         f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
 
+    def _resume_repository_inheritance(self, operation, *, allow_new_operation):
+        """Inspect completion before deciding whether this request is a retry."""
+        self._inherit_decomposed_subtask_bindings(None, operation=operation, inspect_only=True)
+        state = self._repository_inheritance_state
+        if state == "not_required":
+            return None
+        matches = self._repository_inheritance_request_matches
+        if state == "bound":
+            if allow_new_operation:
+                return None
+            if matches:
+                return self._repository_inheritance_message()
+            raise WorkerTaskManageArgumentError("decompose_already_decomposed")
+        if state == "pending":
+            if matches:
+                self._inherit_decomposed_subtask_bindings(None, operation=operation)
+                return self._repository_inheritance_message()
+            self._repository_inheritance_reason = "repository_inheritance_pending"
+            return (f"Task #{self.task_id}: Vorherige Repository-Vererbung ist noch offen "
+                    "(repository_inheritance_pending). Die neue Operation wurde nicht ausgeführt "
+                    "und nicht als Wiederholung behandelt. Zuerst den passenden ursprünglichen "
+                    "Aufruf wiederaufnehmen oder den bestehenden Lead-Operatorpfad verwenden.")
+        return self._repository_inheritance_message()
+
     def _repository_inheritance_message(self):
         if getattr(self, "_repository_inheritance_state", None) == "bound":
             return (f"Task #{self.task_id}: Repository-Bindungen bestätigt für native Teilaufgaben "
@@ -1737,7 +1759,8 @@ class WorkerLeaseBinding:
                 "es werden dabei keine neuen Teilaufgaben erzeugt. Historische Belege ohne Kind-Pins "
                 "benötigen die bestehende Lead-Operator-Reparatur.")
 
-    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
+    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None,
+                                             operation=None, inspect_only=False):
         """Retry only the durable native decomposition, with current holder/child CAS."""
         from pathlib import Path
         from hub._services.task_lease_client import TaskLeaseClient
@@ -1746,6 +1769,7 @@ class WorkerLeaseBinding:
         self._repository_inheritance_reason = None
         self._repository_inheritance_ids = ()
         self._repository_inheritance_changed = False
+        self._repository_inheritance_request_matches = False
         path = registry_path()
         if (registry_file is not None and Path(registry_file) != path
                 or created_ids is not None and not created_ids
@@ -1754,8 +1778,13 @@ class WorkerLeaseBinding:
                 or not path.exists() and not path.is_symlink()):
             return False  # No positive binding claim on unsupported or legacy routes.
         try:
-            result = inherit_decomposed_task_repositories(self, expected_child_ids=created_ids)
+            from hub._services.task_lease import _decomposition_request_digest
+            request_digest = (_decomposition_request_digest(**operation)
+                              if isinstance(operation, dict) else None)
+            result = inherit_decomposed_task_repositories(self, expected_child_ids=created_ids,
+                request_sha256=request_digest, inspect_only=inspect_only)
             self._repository_inheritance_state = result["state"]
+            self._repository_inheritance_request_matches = result.get("request_matches") is True
             self._repository_inheritance_ids = result["created_ids"]
             self._repository_inheritance_changed = result["changed"]
             if created_ids is None and result["changed"]:

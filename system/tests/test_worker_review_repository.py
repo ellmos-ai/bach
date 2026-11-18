@@ -422,3 +422,142 @@ def test_decomposition_publish_reserves_the_native_sqlite_writer(decomposition_w
     assert probes == [True]
     child = child_receipt(w)["created_ids"][0]
     assert registry.resolve_task_repository(child).repository == "ellmos-ai/bach"
+
+
+@pytest.mark.parametrize("changed", ["child", "parent", "restart"])
+def test_new_add_after_completed_inheritance_keeps_normal_operation(decomposition_world, changed):
+    import threading
+    w = decomposition_world
+    binding = w["decomposer"]
+    result = binding.execute_task_manage(w["request"])
+    assert "noch nicht bestätigt" not in result
+    previous = child_receipt(w)
+    child = previous["created_ids"][0]
+    old_binding = registry.resolve_task_repository(child)
+    if changed in {"child", "restart"}:
+        mutate_database(w, "UPDATE tasks SET description='Ordinary follow-up notes' WHERE id=?", (child,))
+    if changed in {"parent", "restart"}:
+        binding.execute_task_manage({"action": "update", "task_id": w["parent"],
+                                     "description": "Additional parent instructions"})
+    if changed == "restart":
+        ack = binding._ack
+        w["client"].release(w["parent"], lease_id=ack.lease_id, fence=ack.fence,
+                            task_version=ack.task_version, outcome="return")
+        binding = WorkerLeaseBinding.acquire(w["client"], w["parent"], worker_id="new-process@test",
+            host="test", generation="new-followup-generation", is_current=lambda: True,
+            stop_event=threading.Event())
+    result = binding.execute_task_manage({"action": "add", "title": "New distinct follow-up"})
+    with sqlite3.connect(w["database"]) as conn:
+        rows = conn.execute("SELECT id FROM tasks WHERE title='New distinct follow-up'").fetchall()
+    assert len(rows) == 1, result
+    assert "erstellt" in result
+    assert registry.resolve_task_repository(rows[0][0]).repository == "ellmos-ai/bach"
+    assert registry.resolve_task_repository(child) == old_binding
+    assert child_receipt(w)["created_ids"] == [rows[0][0]]
+
+
+def test_new_add_is_not_reinterpreted_as_a_different_pending_operation(decomposition_world):
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        first = w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    assert "noch nicht bestätigt" in first
+    before = w["registry"].read_bytes()
+    receipt = child_receipt(w)
+    result = w["decomposer"].execute_task_manage({"action": "add", "title": "Different requested work"})
+    assert "Repository-Bindungen bestätigt" not in result
+    assert "repository_inheritance_pending" in result
+    assert w["registry"].read_bytes() == before
+    assert child_receipt(w) == receipt
+    with sqlite3.connect(w["database"]) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title='Different requested work'").fetchone()[0] == 0
+    # Only the matching operation retries the existing children.
+    assert "Repository-Bindungen bestätigt" in w["decomposer"].execute_task_manage(w["request"])
+
+
+def test_pending_add_repeat_uses_its_native_operation_without_duplicate_creation(decomposition_world):
+    w = decomposition_world
+    args = {"action": "add", "title": "One native add", "description": "Original intent"}
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        first = w["decomposer"].execute_task_manage(args)
+    finally:
+        marker.unlink()
+    assert "noch nicht bestätigt" in first
+    receipt = child_receipt(w)
+    before = w["registry"].read_bytes()
+    different = w["decomposer"].execute_task_manage({**args, "description": "Different intent"})
+    assert "repository_inheritance_pending" in different
+    assert w["registry"].read_bytes() == before
+    assert child_receipt(w) == receipt
+    result = w["decomposer"].execute_task_manage(args)
+    assert "Repository-Bindungen bestätigt" in result
+    assert child_receipt(w) == receipt
+    with sqlite3.connect(w["database"]) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title='One native add'").fetchone()[0] == 1
+
+
+def test_completed_decomposition_does_not_claim_a_different_request_succeeded(decomposition_world):
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+    w = decomposition_world
+    w["decomposer"].execute_task_manage(w["request"])
+    before = child_receipt(w)
+    with pytest.raises(WorkerTaskManageArgumentError) as raised:
+        w["decomposer"].execute_task_manage({
+            **w["request"], "subtasks": [{"title": "Different decomposition"}]})
+    assert raised.value.reason == "decompose_already_decomposed"
+    assert child_receipt(w) == before
+    with sqlite3.connect(w["database"]) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title='Different decomposition'").fetchone()[0] == 0
+
+
+def test_completed_historical_binding_allows_new_add_after_child_edits(decomposition_world):
+    w = decomposition_world
+    w["decomposer"].execute_task_manage(w["request"])
+    old = child_receipt(w)
+    old.pop("request_sha256")
+    old.pop("child_task_versions")
+    mutate_database(w, "UPDATE task_history SET new_value=? WHERE task_id=? AND action='lease_decompose'",
+                    (json.dumps(old), w["parent"]))
+    mutate_database(w, "UPDATE tasks SET description='Legitimate later edit' WHERE id=?",
+                    (old["created_ids"][0],))
+    result = w["decomposer"].execute_task_manage({"action": "add", "title": "Follow-up after old event"})
+    assert "erstellt" in result
+    new = child_receipt(w)
+    assert new["created_ids"] != old["created_ids"]
+    assert registry.resolve_task_repository(new["created_ids"][0]).repository == "ellmos-ai/bach"
+
+
+def test_pending_historical_operation_without_signature_has_explicit_operator_repair(decomposition_world):
+    w = decomposition_world
+    marker = w["registry"].with_name(w["registry"].name + ".operator-lock")
+    marker.touch(mode=0o600)
+    try:
+        w["decomposer"].execute_task_manage(w["request"])
+    finally:
+        marker.unlink()
+    old = child_receipt(w)
+    old.pop("request_sha256")
+    mutate_database(w, "UPDATE task_history SET new_value=? WHERE task_id=? AND action='lease_decompose'",
+                    (json.dumps(old), w["parent"]))
+    before = w["registry"].read_bytes()
+    result = w["decomposer"].execute_task_manage(w["request"])
+    assert "repository_inheritance_pending" in result
+    assert w["registry"].read_bytes() == before
+    for tid in old["created_ids"]:
+        repaired = registry.enroll_task_repository(w["client"], tid,
+            repository="ellmos-ai/bach", task_version=w["client"].task_snapshot(tid)["task_version"],
+            source_sha=w["source_sha"],
+            expected_registry_sha256=hashlib.sha256(w["registry"].read_bytes()).hexdigest(),
+            operator="operator:test-historical-repair")
+        assert repaired["task_mutated"] is False
+        assert registry.resolve_task_repository(tid).repository == "ellmos-ai/bach"
+    result = w["decomposer"].execute_task_manage({"action": "add", "title": "After explicit repair"})
+    assert "erstellt" in result
+    new = child_receipt(w)
+    assert new["created_ids"] != old["created_ids"]
+    assert registry.resolve_task_repository(new["created_ids"][0]).repository == "ellmos-ai/bach"
