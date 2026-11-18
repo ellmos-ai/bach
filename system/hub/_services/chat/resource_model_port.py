@@ -38,6 +38,9 @@ def _unique(pairs):
 
 class GuardedModelPort:
     """No load API; only exact local identity/readback and guarded return."""
+    # This is code-owned capability, never an operator-supplied approval flag.
+    supports_load_pending = False
+
     def __init__(self, *, gate_factory=HostInferenceGate, transport=None,
                  timeout_seconds=20, clock=time.monotonic):
         if not 0 < timeout_seconds <= 20:
@@ -118,7 +121,55 @@ class GuardedModelPort:
                 raise
             raise ModelReturnUnconfirmed("model_return_unconfirmed") from exc
 
-    async def _unload(self, spec, check_owned):
+    def load_observation(self, spec, policy_sha256, *, loaded, expected_process=None, capacity_reader, accept=None):
+        async def observe():
+            from hub._services.chat.resource_load_pending import observe_under_owner
+            gate = self.gate_factory()
+            deadline = self.clock() + self.timeout_seconds
+            def ready():
+                if self.clock() >= deadline:
+                    raise ModelReturnUnconfirmed("model_load_proof_deadline")
+            async with gate.turn("resource-model-load-proof", "background", check_ready=ready):
+                ready()
+                result = observe_under_owner(self, spec, policy_sha256, loaded=loaded,
+                    expected_process=expected_process, capacity_reader=capacity_reader, deadline=deadline)
+                if accept is not None:
+                    HostInferenceGate.current_owner()._check_owned_record()
+                    ready()
+                    accept(result)  # Local arbiter commit, never a controller RPC.
+                return result
+        try:
+            return asyncio.run(observe())
+        except Exception as exc:
+            raise ModelReturnUnconfirmed("model_load_native_proof_unavailable") from exc
+
+    def check_load_under_owner(self, spec, permit):
+        from hub._services.chat.resource_load_pending import native_model_process, REVIEWED_POLICY_SHA256
+        from hub._services.chat.local_resource_reserve import read_policy
+        held = HostInferenceGate.current_owner()._check_owned_record()
+        if ("dispatch_pending" in held.record or held.record.get("model_target", {}).get("model") != spec.model
+                or permit.get("phase") != "MAY_LOAD" or permit.get("workload_sha256") != spec.fingerprint()
+                or permit.get("policy_sha256") != REVIEWED_POLICY_SHA256
+                or read_policy()[1] != REVIEWED_POLICY_SHA256 or self.clock() >= permit["deadline"]
+                or native_model_process(spec)[0] != permit["baseline"]["process"]):
+            raise ModelReturnUnconfirmed("model_load_permission_changed_before_post")
+        deadline = min(permit["deadline"], self.clock() + self.timeout_seconds)
+        self._available(spec, deadline)
+        snapshot = self._api(spec, "/api/ps", deadline)
+        self._target(spec, snapshot, residency=True)
+        if snapshot["models"]:
+            raise ModelReturnUnconfirmed("model_load_requires_exclusive_absence")
+        HostInferenceGate.current_owner()._check_owned_record()
+
+    def abort_load(self, spec, expected_process, check_owned):
+        try:
+            asyncio.run(self._unload(spec, check_owned, expected_process=expected_process))
+        except Exception as exc:
+            if isinstance(exc, ModelReturnUnconfirmed):
+                raise
+            raise ModelReturnUnconfirmed("model_load_abort_unconfirmed") from exc
+
+    async def _unload(self, spec, check_owned, *, expected_process=None):
         from tools.maintenance.memory_pressure_unload_guard import (
             record_intent,
             sync_directory,
@@ -133,9 +184,18 @@ class GuardedModelPort:
         ready()
         async with gate.turn("resource-model-return", "background", check_ready=ready):
             ready()
+            if expected_process is not None:
+                from hub._services.chat.resource_load_pending import native_model_process
+                if native_model_process(spec)[0] != expected_process:
+                    raise ModelReturnUnconfirmed("model_load_process_identity_changed")
             self._available(spec, deadline)
-            target = self._target(spec, self._api(spec, "/api/ps", deadline), residency=True)
+            snapshot = self._api(spec, "/api/ps", deadline)
+            target = self._target(spec, snapshot, residency=True)
+            if expected_process is not None and len(snapshot["models"]) != (1 if target else 0):
+                raise ModelReturnUnconfirmed("another_model_during_load_abort")
             if target is None:
+                if expected_process is not None and native_model_process(spec)[0] != expected_process:
+                    raise ModelReturnUnconfirmed("model_load_process_identity_changed")
                 return
             ready()
             pending = record_intent(gate.root, spec.model, spec.digest)
@@ -146,10 +206,15 @@ class GuardedModelPort:
                 raise ModelReturnUnconfirmed("model_unload_ack_missing")
             while True:
                 ready()
-                target = self._target(spec, self._api(spec, "/api/ps", deadline), residency=True)
+                snapshot = self._api(spec, "/api/ps", deadline)
+                target = self._target(spec, snapshot, residency=True)
+                if expected_process is not None and len(snapshot["models"]) != (1 if target else 0):
+                    raise ModelReturnUnconfirmed("another_model_during_load_abort")
                 if target is None:
                     break
                 await asyncio.sleep(.1)
             ready()
+            if expected_process is not None and native_model_process(spec)[0] != expected_process:
+                raise ModelReturnUnconfirmed("model_load_process_identity_changed")
             pending.unlink()
             sync_directory(gate.root)
