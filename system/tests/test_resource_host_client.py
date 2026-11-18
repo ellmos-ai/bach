@@ -188,3 +188,39 @@ def test_local_binding_revocation_during_broker_admission_prevents_dispatch(tmp_
     with pytest.raises(RuntimeError, match="model_socket_binding_unavailable"):
         asyncio.run(runtime._chat_with_compute_turn(backend, []))
     assert events == ["probe", "resource_wait"]
+
+@pytest.mark.parametrize("endpoint", ["http://0.0.0.0:11434", "", None])
+def test_native_local_unreviewed_endpoint_never_bypasses_enabled_broker(
+        tmp_path, monkeypatch, endpoint):
+    monkeypatch.setenv("BACH_RUNTIME_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("BACH_RESOURCE_BROKER_CONFIG", "/fixture/unavailable-client.json")
+    from hub._services.chat import host_inference_gate, local_resource_reserve
+    from hub._services.chat.chat_runtime import ChatRuntime
+    from hub._services.llm.model_backend import OllamaBackend
+
+    monkeypatch.setattr(local_resource_reserve, "read_policy", lambda: (None, None))
+    events = []
+
+    def provider(*args, **kwargs):
+        events.append("provider")
+        pytest.fail("unreviewed endpoint must fail before authority lookup")
+
+    @asynccontextmanager
+    async def inference(self, *args, **kwargs):
+        events.append("inference")
+        yield
+
+    async def model(*args, **kwargs):
+        events.append("model")
+        return {"content": "synthetic"}
+
+    monkeypatch.setattr(bridge, "load_verified", provider)
+    monkeypatch.setattr(host_inference_gate.HostInferenceGate, "turn", inference)
+    backend = OllamaBackend(base_url="http://127.0.0.1:11434")
+    backend.base_url = endpoint
+    monkeypatch.setattr(backend, "chat", model)
+    runtime = ChatRuntime(backend)
+    assert runtime._uses_local_compute(backend)
+    with pytest.raises(bridge.ResourceHostUnavailable, match="resource_model_endpoint_not_reviewed"):
+        asyncio.run(runtime._chat_with_compute_turn(backend, []))
+    assert events == []

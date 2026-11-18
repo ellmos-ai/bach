@@ -15,8 +15,21 @@ class ResourceHostUnavailable(RuntimeError):
     pass
 
 
+def _endpoint_url(backend):
+    # The runtime treats missing endpoints and the IPv4 wildcard as local.
+    # They are not reviewed broker targets, never evidence of an external call.
+    try:
+        url = urlsplit(str(getattr(backend, "base_url", "") or ""))
+        hostname = url.hostname
+    except ValueError:
+        raise ResourceHostUnavailable("resource_model_endpoint_not_reviewed") from None
+    if not hostname or hostname == "0.0.0.0":
+        raise ResourceHostUnavailable("resource_model_endpoint_not_reviewed")
+    return url
+
+
 def _target(backend, model, models):
-    url = urlsplit(str(getattr(backend, "base_url", "")))
+    url = _endpoint_url(backend)
     if url.hostname not in {"localhost", "127.0.0.1", "::1"}:
         return None  # External model providers do not use this host's resources.
     if (url.scheme != "http" or url.username or url.password or url.query or url.fragment
@@ -46,7 +59,7 @@ async def resource_model_turn(backend, model, chat_id, priority, *, check_ready=
     if not path:
         yield check_ready
         return
-    url = urlsplit(str(getattr(backend, "base_url", "")))
+    url = _endpoint_url(backend)
     if url.hostname not in {"localhost", "127.0.0.1", "::1"}:
         def external_ready():
             if check_ready is not None:
