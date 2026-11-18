@@ -1079,6 +1079,20 @@ class MaintenanceRuntime:
                 or row["timeout_seconds"] != 60
             ):
                 raise RuntimeError("existing_maintenance_job_conflict")
+            policy = row.get("misfire_policy")
+            if policy not in {"replay", "coalesce_latest"}:
+                raise SchedulerFacadeUnavailable("scheduler_misfire_policy_unavailable")
+            if policy == "replay":
+                self.guard(self.state_db)
+                # The module rechecks generation and active claims under its
+                # write transaction. This does not shift a date or create a run.
+                adapter.store.set_misfire_policy(
+                    JOB_ID,
+                    "coalesce_latest",
+                    expected_generation=row["generation"],
+                    expected_policy="replay",
+                    now=self.clock(),
+                )
         else:
             self.guard(self.state_db)
             adapter.store.add_job(
@@ -1090,6 +1104,7 @@ class MaintenanceRuntime:
                 next_due_at=self.clock(),
                 lease_seconds=180,
                 timeout_seconds=60,
+                misfire_policy="coalesce_latest",
             )
         cache = read_state(self.dispatcher.state_path).get("routines", {})
         from datetime import timedelta
@@ -1110,6 +1125,7 @@ class MaintenanceRuntime:
                     or json.loads(row["payload_json"]) != payload
                     or row["timeout_seconds"] != 60
                     or bool(row["enabled"]) != definition["enabled"]
+                    or row.get("misfire_policy") != "replay"
                 ):
                     raise RuntimeError("existing_maintenance_job_conflict")
             else:
