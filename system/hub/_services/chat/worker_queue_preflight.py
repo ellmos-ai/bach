@@ -1,3 +1,4 @@
+# BACH Adapter: worker_queue_preflight
 # SPDX-License-Identifier: MIT
 """Read-only queue observations: change hints never authorize model or task work."""
 from __future__ import annotations
