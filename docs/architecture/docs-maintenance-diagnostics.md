@@ -203,4 +203,10 @@ koordiniert anhalten und den Policy-/Build-Rollback explizit planen; keine
 parallelen alten und neuen Writer. Der getestete Quellcodezustand ersetzt
 keinen Nachweis einer aktivierten Installation.
 
-Geprüfter Scheduler-Quellcommit für diesen Anschluss: d7564d4c14e55a42b1300c2dd45778ea1ffbddf7 (0.3.7). Der Dependency-Pin in requirements.txt bezeichnet genau diesen Stand.
+Geprüfter Scheduler-Quellcommit für diesen Anschluss: 698b22ceccde4f83c2680d2d957e394317667869 (0.3.7). Der Dependency-Pin in requirements.txt bezeichnet genau diesen Stand.
+
+Die unabhängige Prüfung ergänzte einen Fall mit getrennten abgelaufenen
+Claims und erfolgreichem Zwischenlauf. Der gepinnte Folgestand wählt alle
+ausstehenden Wiederholungen unabhängig vom regulären Fälligkeitszeiger aus
+und erhält den Fortschritt bereits zugelassener Termine. Erfolgreiche
+Zwischenläufe werden weder wiederholt noch als ausgelassen mitgezählt.
