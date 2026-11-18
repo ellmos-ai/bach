@@ -800,6 +800,36 @@ def prepare_external_review_task(conn, task_id, *, operator_token, expected=None
     return _prepare_target_review(conn, target, authority, operator_token=operator_token)
 
 
+
+def _attach_review_repository_binding(conn, result):
+    """Bind only committed native canonical reviews; return/log concrete failures."""
+    if not isinstance(result, dict) or result.get("status") not in {"pending", "open"}:
+        return result
+    from .chat.worker_repo_registry import (
+        RepositoryBindingError, _read_registry_bytes, canonical_review_connection,
+        enroll_review_task_repository, registry_path,
+    )
+    if not canonical_review_connection(conn):
+        return result
+    from .task_lease_client import TaskLeaseClient
+    import logging
+    try:
+        binding = enroll_review_task_repository(
+            TaskLeaseClient(), result["review_task_id"], task_version=result["task_version"],
+            expected_registry_sha256=hashlib.sha256(_read_registry_bytes(registry_path())).hexdigest(),
+            operator="operator:native-review-controller")
+        status = {"state": binding["state"], "repository": binding["repository"],
+                  "source_sha": binding["source_sha"]}
+    except RepositoryBindingError as exc:
+        status = {"state": "unavailable", "reason_code": exc.reason_code}
+    except Exception:
+        status = {"state": "unavailable", "reason_code": "review_binding_check_unavailable"}
+    if status["state"] == "unavailable":
+        logging.getLogger(__name__).warning(
+            "review_repository_binding task_id=%s state=unavailable reason_code=%s",
+            result["review_task_id"], status["reason_code"])
+    return {**result, "repository_binding": status}
+
 def _prepare_target_review(conn, target, authority, *, operator_token=None,
                            hashbound=False):
     """One ordinary review task for either proven source; DB CAS only here."""
@@ -824,7 +854,7 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
             if old is not None:
                 result = review_task_metadata(conn, old["review_task_id"])
                 conn.commit()
-                return result
+                return _attach_review_repository_binding(conn, result) if source_kind(target) == 'native' else result
             now = _utcnow()
             stamp = now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             title = f"Ergebnisreview Task #{target['task_id']} / Result #{target['result_id']}"
@@ -873,7 +903,7 @@ def _prepare_target_review(conn, target, authority, *, operator_token=None,
             if result is None:
                 raise RuntimeError("Review-Intent nach Anlage nicht bestätigt")
             conn.commit()
-            return result
+            return _attach_review_repository_binding(conn, result) if source_kind(target) == 'native' else result
         except BaseException:
             conn.rollback()
             raise

@@ -159,6 +159,7 @@ class WorkerLeaseBinding:
         self._scope_captured_result_id = None
         self._renew_exhausted = False
         self._decomposition_receipt = None
+        self._repository_inheritance_state = None
         # Only native, versioned update ACKs may move a running budget's task pin.
         self._budget_version_transitions = []
         # Cumulative for this lease, not reset by model block boundaries.
@@ -1666,9 +1667,6 @@ class WorkerLeaseBinding:
                     close_parent = args.get("close_parent", False)
                     if close_parent is not False:
                         raise WorkerTaskManageArgumentError("decompose_parent")
-                    if (self._decomposition_receipt is not None
-                            or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[", str(self._snapshot.get("description") or ""))):
-                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                     if isinstance(subtasks, list):
                         subtasks = [{**{key: args[key] for key in (
                                            "category", "assigned_to", "assigned_slot", "required_model", "result_max_chars")
@@ -1680,6 +1678,21 @@ class WorkerLeaseBinding:
                     # a blank one would be stored verbatim and leave the child unpickable.
                     if owner is not None and owner != "" and str(owner).strip().casefold() not in _SUBTASK_ASSIGNEES:
                         raise WorkerTaskManageArgumentError("decompose_assignee")
+                prior_decomposition = (self._decomposition_receipt is not None
+                    or re.search(r"\[In \d+ Teilaufgaben zerlegt: \[",
+                                 str(self._snapshot.get("description") or "")))
+                # Add consults native history even when a description marker was
+                # removed; legacy marker text alone is never a pending receipt.
+                if (action == "add" or prior_decomposition
+                        or self._repository_inheritance_state in {"pending", "unavailable"}):
+                    recovery = self._resume_repository_inheritance(
+                        {"subtasks": subtasks, "close_parent": close_parent,
+                         "sequential": args.get("sequential", False)},
+                        allow_new_operation=action == "add")
+                    if recovery is not None:
+                        return recovery
+                    if action == "decompose":
+                        raise WorkerTaskManageArgumentError("decompose_already_decomposed")
                 previous_version = self._snapshot["task_version"]
                 ack = self._operation(self._client.decompose, subtasks=subtasks,
                                       close_parent=close_parent, sequential=args.get("sequential", False),
@@ -1692,7 +1705,6 @@ class WorkerLeaseBinding:
                         "task_id": self.task_id, "previous_version": previous_version,
                         "created_ids": tuple(ack.created_ids), "parent_closed": ack.parent_closed,
                     }
-                self._inherit_decomposed_subtask_bindings(ack.created_ids)
                 self._adopt_task_version(ack.task_version, previous_version=previous_version)
                 new_ids = [value for value in ack.created_ids if value not in ack.reused_ids]
                 notes = f"\n[In {len(new_ids)} Teilaufgaben zerlegt: {new_ids}]" if new_ids else ""
@@ -1702,6 +1714,9 @@ class WorkerLeaseBinding:
                 if ack.parent_closed:
                     self.invalidate("decompose_closed_parent")
                     raise LeaseProtocolError("Zerlegung hat unerlaubt den Parent abgeschlossen")
+                self._inherit_decomposed_subtask_bindings(ack.created_ids)
+                if self._repository_inheritance_state == "unavailable":
+                    return self._repository_inheritance_message()
                 if action == "add":
                     if ack.created_ids[0] in ack.reused_ids:
                         return (f"Task #{ack.created_ids[0]} besteht bereits als offene Teilaufgabe mit gleichem "
@@ -1713,71 +1728,82 @@ class WorkerLeaseBinding:
                         f"IDs {list(ack.created_ids)}{reused_note}")
             raise LeaseProtocolError("Unbekannte Task-Aktion")
 
-    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None):
-        """Propagate verified parent repository binding to newly decomposed child tasks."""
-        if not created_ids:
-            return False
+    def _resume_repository_inheritance(self, operation, *, allow_new_operation):
+        """Inspect completion before deciding whether this request is a retry."""
+        self._inherit_decomposed_subtask_bindings(None, operation=operation, inspect_only=True)
+        state = self._repository_inheritance_state
+        if state == "not_required":
+            return None
+        if (state == "absent" and allow_new_operation
+                and self._decomposition_receipt is None):
+            return None
+        matches = self._repository_inheritance_request_matches
+        if state == "bound":
+            if allow_new_operation:
+                return None
+            if matches:
+                return self._repository_inheritance_message()
+            raise WorkerTaskManageArgumentError("decompose_already_decomposed")
+        if state == "pending":
+            if matches:
+                self._inherit_decomposed_subtask_bindings(None, operation=operation)
+                return self._repository_inheritance_message()
+            self._repository_inheritance_reason = "repository_inheritance_pending"
+            return (f"Task #{self.task_id}: Vorherige Repository-Vererbung ist noch offen "
+                    "(repository_inheritance_pending). Die neue Operation wurde nicht ausgeführt "
+                    "und nicht als Wiederholung behandelt. Zuerst den passenden ursprünglichen "
+                    "Aufruf wiederaufnehmen oder den bestehenden Lead-Operatorpfad verwenden.")
+        return self._repository_inheritance_message()
+
+    def _repository_inheritance_message(self):
+        if getattr(self, "_repository_inheritance_state", None) == "bound":
+            return (f"Task #{self.task_id}: Repository-Bindungen bestätigt für native Teilaufgaben "
+                    f"{list(self._repository_inheritance_ids)}; keine neuen Teilaufgaben angelegt.")
+        reason = getattr(self, "_repository_inheritance_reason", "repository_inheritance_unavailable")
+        return (f"Task #{self.task_id}: Teilaufgaben sind bereits angelegt; Repository-Bindungen noch nicht bestätigt "
+                f"({reason}). Nach Behebung des Blockers den identischen Aufruf wiederholen; "
+                "es werden dabei keine neuen Teilaufgaben erzeugt. Historische Belege ohne Kind-Pins "
+                "benötigen die bestehende Lead-Operator-Reparatur.")
+
+    def _inherit_decomposed_subtask_bindings(self, created_ids, *, registry_file=None,
+                                             operation=None, inspect_only=False):
+        """Retry only the durable native decomposition, with current holder/child CAS."""
+        from pathlib import Path
+        from hub._services.task_lease_client import TaskLeaseClient
+        from .worker_repo_registry import registry_path, inherit_decomposed_task_repositories
+        self._repository_inheritance_state = "not_required"
+        self._repository_inheritance_reason = None
+        self._repository_inheritance_ids = ()
+        self._repository_inheritance_changed = False
+        self._repository_inheritance_request_matches = False
+        path = registry_path()
+        if (registry_file is not None and Path(registry_file) != path
+                or created_ids is not None and not created_ids
+                or type(self._client) is not TaskLeaseClient
+                or self._client.mode != "local" or self._client._conn is not None
+                or not path.exists() and not path.is_symlink()):
+            return False  # No positive binding claim on unsupported or legacy routes.
         try:
-            import json
-            import os
-            import tempfile
-            from pathlib import Path
-
-            if registry_file is None:
-                # Only auto-mutate the live registry when bound to the canonical local DB.
-                if (getattr(self._client, "mode", None) != "local"
-                        or getattr(self._client, "_conn", None) is not None):
-                    return False
-                canonical_db = Path.home() / ".bach" / "bach.db"
-                client_db = getattr(self._client, "_db_path", None)
-                if client_db is not None and Path(client_db).resolve(strict=False) != canonical_db.resolve(strict=False):
-                    return False
-                reg_path = Path.home() / ".bach" / "worker_repo_registry.v1.json"
-            else:
-                reg_path = Path(registry_file)
-
-            if not reg_path.is_file() or reg_path.is_symlink():
+            from hub._services.task_lease import _decomposition_request_digest
+            request_digest = (_decomposition_request_digest(**operation)
+                              if isinstance(operation, dict) else None)
+            result = inherit_decomposed_task_repositories(self, expected_child_ids=created_ids,
+                request_sha256=request_digest, inspect_only=inspect_only)
+            self._repository_inheritance_state = result["state"]
+            self._repository_inheritance_request_matches = result.get("request_matches") is True
+            self._repository_inheritance_ids = result["created_ids"]
+            self._repository_inheritance_changed = result["changed"]
+            if created_ids is None and result["changed"]:
+                self._progress = True  # Confirmed repair, never a repeated bare add.
+            return result["state"] == "bound"
+        except Exception as exc:
+            self._repository_inheritance_state = "unavailable"
+            self._repository_inheritance_reason = getattr(
+                exc, "reason_code", "repository_inheritance_unavailable")
+            if (inspect_only
+                    and self._repository_inheritance_reason == "decomposition_receipt_missing"):
+                self._repository_inheritance_state = "absent"
                 return False
-            data = json.loads(reg_path.read_text(encoding="utf-8"))
-            tasks_map = data.get("tasks")
-            if not isinstance(tasks_map, dict):
-                return False
-            parent_entry = tasks_map.get(str(self.task_id))
-            if not isinstance(parent_entry, dict) or "repository" not in parent_entry or "source_sha" not in parent_entry:
-                return False
-
-            now_iso = datetime.now(timezone.utc).isoformat()
-            changed = False
-            for cid in created_ids:
-                cid_str = str(int(cid))
-                if cid_str in tasks_map:
-                    continue
-                entry = {
-                    "repository": parent_entry["repository"],
-                    "source_sha": parent_entry["source_sha"],
-                }
-                if "source_proof_sha256" in parent_entry:
-                    snap_fn = getattr(self._client, "_task_policy_snapshot", None)
-                    child_snap = snap_fn(int(cid)) if callable(snap_fn) else None
-                    child_ver = child_snap.get("task_version") if isinstance(child_snap, dict) else None
-                    if isinstance(child_ver, str) and len(child_ver) == 64:
-                        entry["task_version"] = child_ver
-                        entry["operator"] = parent_entry.get("operator", "operator:decompose-inherit")
-                        entry["registered_at"] = now_iso
-                        entry["source_proof_sha256"] = parent_entry["source_proof_sha256"]
-                tasks_map[cid_str] = entry
-                changed = True
-
-            if not changed:
-                return False
-            raw = (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
-            with tempfile.NamedTemporaryFile(dir=reg_path.parent, prefix=".repo-inherit-", delete=False) as tmp:
-                tmp_path = Path(tmp.name)
-                os.chmod(tmp_path, 0o600)
-                tmp.write(raw)
-                tmp.flush()
-                os.fsync(tmp.fileno())
-            os.replace(tmp_path, reg_path)
-            return True
-        except Exception:
+            log.warning("worker_repository_inheritance task_id=%s reason_code=%s",
+                        self.task_id, self._repository_inheritance_reason)
             return False

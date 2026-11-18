@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -21,8 +22,21 @@ from hub._services.chat.worker_tool_trace import (
 from hub._services.chat.worker_tool_bridge import WorkerToolBridge
 
 
+def _registry_document(task_id=None):
+    return {
+        "schema": "bach.worker-repo-registry.v1",
+        "repositories": {"ellmos-ai/bach": {
+            "origin": "https://github.com/ellmos-ai/bach",
+            "default_branch": "main",
+            "visibility": "public",
+        }},
+        "tasks": {} if task_id is None else {
+            str(task_id): {"repository": "ellmos-ai/bach", "source_sha": "b" * 40}},
+    }
+
+
 @pytest.fixture
-def binding(tmp_path, monkeypatch):
+def binding(tmp_path, monkeypatch, request):
     from system.tests.test_task_lease_service import _create_db, _connect, _insert
     from hub._services import task_lease_client
     from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
@@ -34,25 +48,29 @@ def binding(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("BACH_LOCAL_DIR", str(local_bach))
-    reg_file = local_bach / "worker_repo_registry.v1.json"
-    reg_file.write_text(json.dumps({
-        "schema": "bach.worker-repo-registry.v1",
-        "repositories": {
-            "ellmos-ai/bach": {
-                "origin": "https://github.com/ellmos-ai/bach",
-                "default_branch": "main",
-                "visibility": "public",
-            }
-        },
-        "tasks": {},
-    }), encoding="utf-8")
-    reg_file.chmod(0o600)
-
-    database = tmp_path / "canonical.db"
+    mode = getattr(request, "param", "legacy_trace")
+    assert mode in {"legacy_trace", "canonical_registry"}
+    # Legacy trace tests have no repository authority configured. The canonical
+    # E2E below uses the real authority path and a trusted pinned parent entry.
+    database = local_bach / "bach.db" if mode == "canonical_registry" else tmp_path / "canonical.db"
     _create_db(database)
     conn = _connect(database)
     task_id = _insert(conn, title="Trace task", assigned_to="BACH")
     conn.close()
+    if mode == "canonical_registry":
+        reg_file = local_bach / "worker_repo_registry.v1.json"
+        reg_file.write_text(json.dumps(_registry_document(task_id)), encoding="utf-8")
+        reg_file.chmod(0o600)
+        # Only the external scanner is isolated, for this new private directory.
+        # Canonical DB checks, leases, registry writer fences and CAS stay real.
+        from hub._services.chat import worker_write_guard
+        native_scan = worker_write_guard._scan_locks
+        def private_registry_scan(path, **kwargs):
+            if Path(path) == local_bach:
+                return {"checked": str(local_bach), "locks": [], "hook_guards": [],
+                        "twin_status": "not-applicable", "descendants_complete": True}
+            return native_scan(path, **kwargs)
+        monkeypatch.setattr(worker_write_guard, "_scan_locks", private_registry_scan)
     monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
     monkeypatch.setattr(task_lease_client, "get_lead_config", lambda: {"mode": "isolated"})
     client = task_lease_client.TaskLeaseClient(db_path=database)
@@ -626,3 +644,51 @@ def test_restart_that_ignores_the_effect_log_still_gets_the_existing_subtask(bin
     finally:
         if restarted._active:
             restarted.return_lease()
+
+
+@pytest.mark.parametrize("binding", ["canonical_registry"], indirect=True)
+def test_canonical_registry_add_restart_preserves_source_and_deduplicates(binding):
+    from hub._services.chat.worker_repo_registry import resolve_task_repository
+
+    assert binding._client._db_path == Path.home() / ".bach" / "bach.db"
+    parent = resolve_task_repository(binding.task_id)
+    first, message = _add(binding, "Canonical child")
+    assert first != binding.task_id and "erstellt" in message
+    child = resolve_task_repository(first)
+    assert (child.repository, child.source_sha) == (parent.repository, parent.source_sha)
+
+    restarted = _restart(binding, "canonical-trace-generation-2")
+    try:
+        again, message = _add(restarted, "Canonical child")
+        assert again == first and "besteht bereits" in message
+        second, message = _add(restarted, "Canonical follow-up")
+        assert second not in {first, binding.task_id} and "erstellt" in message
+        followup = resolve_task_repository(second)
+        assert (followup.repository, followup.source_sha) == (parent.repository, parent.source_sha)
+        assert resolve_task_repository(first) == child
+        with closing(restarted._client._get_local_connection()) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title='Canonical child'").fetchone()[0] == 1
+            assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title='Canonical follow-up'").fetchone()[0] == 1
+        assert sum(event["phase"] == "acknowledged" for event in _events(restarted)) == 3
+    finally:
+        if restarted._active:
+            restarted.return_lease()
+
+
+def test_configured_registry_does_not_trust_noncanonical_trace_database(binding):
+    from hub._services.chat import worker_repo_registry as registry
+    from hub._services.chat.worker_lease_binding import WorkerLeaseBinding
+
+    path = registry.registry_path()
+    assert not path.exists()
+    slot = {"allowed_repositories": []}
+    assert WorkerLeaseBinding._repository_rejection_reason(binding.task_snapshot(), slot) is None
+    path.write_text(json.dumps(_registry_document()), encoding="utf-8")
+    path.chmod(0o600)
+    before = path.read_bytes()
+    assert WorkerLeaseBinding._repository_rejection_reason(
+        binding.task_snapshot(), slot) == "repository_unverified"
+    with pytest.raises(registry.RepositoryBindingError) as raised:
+        registry.inherit_decomposed_task_repositories(binding, inspect_only=True)
+    assert raised.value.reason_code == "canonical_lead_required"
+    assert path.read_bytes() == before
