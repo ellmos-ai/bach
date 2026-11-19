@@ -29,6 +29,33 @@ def native_resident_credit(*, api_size, process_rss):
     return None
 
 
+def verified_wired_resident_credit(
+    *,
+    scope,
+    before_sample_epoch,
+    after_sample_epoch,
+    pre_commit_epoch,
+    platform_sample,
+    observed_at,
+):
+    """Build a verified ResidentCredit v2 via the pinned ocean-resources package.
+
+    Stock Ollama 0.33.3 does not supply a cooperative WiredEpoch or signed
+    /usr/bin/vm_stat bracket and continues to use ``native_resident_credit``
+    (zero credit, ``supports_load_pending = False``). Any missing or mismatched
+    binding fails closed inside ``ocean_resources.model_loading``.
+    """
+    native = load_verified(("ocean_resources.model_loading",))["ocean_resources.model_loading"]
+    return native.build_wired_resident_credit(
+        scope=scope,
+        before_sample_epoch=before_sample_epoch,
+        after_sample_epoch=after_sample_epoch,
+        pre_commit_epoch=pre_commit_epoch,
+        platform_sample=platform_sample,
+        observed_at=observed_at,
+    )
+
+
 def native_model_process(spec):
     """Read the single exact loopback listener and its stable owned process tree.
 
