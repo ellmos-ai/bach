@@ -1553,6 +1553,88 @@ def test_task_local_failure_returns_task_with_reason_and_worker_continues(tmp_pa
         conn.close()
 
 
+def test_host_capacity_wait_delay_backs_off_and_caps():
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    assert [control._host_capacity_wait_delay(n) for n in (1, 2, 3, 4, 5, 6, 50)] == [
+        60, 120, 240, 480, 900, 900, 900]
+    assert control._host_capacity_wait_delay(0) == 60
+    assert control._host_capacity_wait_delay(None) == 60
+
+
+def test_expired_local_reserve_does_not_stop_worker_or_defer_task(tmp_path, monkeypatch):
+    """#4243: a host-wide reserve outage must not end a continuous worker after three tasks."""
+    from hub._services import task_lease_client as client_module
+    from hub._services.chat.chat_runtime import ChatSession
+    from hub._services.task_lease_client import TaskLeaseClient
+
+    from system.tests.test_task_lease_client import _init_db
+    model = "glm-5.3:cloud"
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    ident = _add_test_worker({"name": "Host capacity fixture", "type": "continuous"}, path)
+    slots.update_slot(ident, {"backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0}, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute("INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+                 "VALUES (42,'Host capacity fixture','pending','P1','INBOX','BACH',?)", (ident,))
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(control, "runtime", runtime)
+    session = ChatSession()
+    session.chat_id = ident
+    monkeypatch.setattr(runtime, "get_session", lambda _: session)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
+    taken = []
+
+    async def process(*a, **kw):
+        binding = session.worker_task_binding
+        assert binding is not None and not binding.closed
+        taken.append(binding.task_id)
+        return FailedAnswer(f"{FailedAnswer.PREFIX}Lokale Ressourcenreserve wurde nicht rechtzeitig frei",
+                            reason_code="local_reserve_reserve_wait_expired")
+    monkeypatch.setattr(runtime, "process", process)
+    waits = []
+
+    def fake_wait(control_arg, seconds, **kw):
+        assert control_arg.task_binding is None  # lease-free wait
+        waits.append(seconds)
+        return len(waits) < 4
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", fake_wait)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        thread = control._WORKER_EXECUTIONS[ident].thread
+        thread.join(8)
+        assert not thread.is_alive()
+        # Four host waits in a row: the same task is retried (not deferred), no stop.
+        assert taken == [42, 42, 42, 42]
+        assert waits == [60, 120, 240, 480]
+        task = dict(conn.execute("SELECT status, claim_salt_ref FROM tasks WHERE id=42").fetchone())
+        assert task["status"] == "pending" and task["claim_salt_ref"] is None
+        releases = conn.execute(
+            "SELECT COUNT(*) FROM task_history WHERE task_id=42 AND action='lease_release'").fetchone()[0]
+        assert releases == 4
+        activity = slots.get_slot(ident, path).get("current_activity") or ""
+        assert "Tasks in Folge fehlgeschlagen" not in activity
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
+
+
 @pytest.mark.parametrize(("status", "expected"), [(402, 86400), (401, None), (429, 60), (502, 60), (503, 60), (504, 60)])
 def test_openrouter_without_credit_rechecks_daily(status, expected):
     """User rule 25.10.2026: no credit pauses the worker and checks once a day, it does not end it."""

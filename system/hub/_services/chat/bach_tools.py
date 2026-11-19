@@ -197,8 +197,14 @@ def _log_bound_task_manage_denial(stage, binding, args, exc=None):
     reason = (exc.reason if isinstance(exc, LeaseDeniedError)
               and type(exc.reason) is str and exc.reason in _SAFE_DENIAL_REASONS
               else "none")
-    log.warning("bound_task_manage_denied stage=%s action=%s kind=%s reason=%s task_id=%d generation=%s",
-                stage, action, kind, reason, task_id, generation)
+    # Protocol errors mostly carry fixed code-defined sentences. Log only a short
+    # fingerprint so a lost ACK (#4244) can be matched offline against the static
+    # raise sites, without ever echoing exception, argument or result text.
+    detail = "none"
+    if isinstance(exc, LeaseProtocolError):
+        detail = hashlib.sha256(str(exc).strip().encode("utf-8", "replace")).hexdigest()[:10]
+    log.warning("bound_task_manage_denied stage=%s action=%s kind=%s reason=%s detail_sha=%s task_id=%d generation=%s",
+                stage, action, kind, reason, detail, task_id, generation)
 
 _READ_EVIDENCE_SCHEMA = "ellmos.read-evidence.v1"
 _READ_EVIDENCE_READ_ONLY_TOOLS = frozenset({"read_file", "search_text", "task_manage"})
