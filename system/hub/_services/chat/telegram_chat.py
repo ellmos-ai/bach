@@ -2391,6 +2391,15 @@ def _worker_return_note(detail, reason_code, transient_failure=None, task_id=Non
 _WORKER_BACKEND_RETRY_LIMIT = 3
 _WORKER_BACKEND_RETRY_BASE_SECONDS = 60
 _WORKER_BACKEND_RETRY_BUDGET_SECONDS = 900
+_HOST_CAPACITY_WAIT_MAX_SECONDS = 900
+
+
+def _host_capacity_wait_delay(waits):
+    """Lease-free backoff after an expired local reserve wait: 60, 120, ... capped at 900 s."""
+    if type(waits) is not int or waits < 1:
+        waits = 1
+    return min(_HOST_CAPACITY_WAIT_MAX_SECONDS,
+               _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** min(waits - 1, 4)))
 
 
 def _persistent_local_retry_binding(slot):
@@ -6444,6 +6453,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
             prompt_to_run = initial_prompt
             run_count = 0
             task_failures = 0
+            host_capacity_waits = 0
             buddha_warmup_complete = False
             initial_recovery = control.persistent_core_recovery_state
             backend_retries = (
@@ -7142,7 +7152,18 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         and current_slot.get("type") in {"continuous", "persistent"}
                         and control.persistent_core_intent_id is None
                         and control.model_request_budget is None)
-                    if task_local:
+                    # An expired local reserve wait before any tool dispatch is a host
+                    # capacity condition, not a broken task (#4243: a hung sandboxd kept
+                    # RAM/volume admission blocked for 30 h and stopped Buddha for good).
+                    # It neither counts toward the three-failure stop nor defers the
+                    # task; the worker returns the lease and waits a bounded backoff.
+                    host_capacity_wait = (
+                        task_local
+                        and failure_reason == "local_reserve_reserve_wait_expired"
+                        and retry_before_tools)
+                    if host_capacity_wait:
+                        host_capacity_waits += 1
+                    elif task_local:
                         task_failures += 1
                     if task_local and failure_reason in _CONTEXT_WIP_REASONS:
                         _secure_context_wip(control, worker_session, failure_reason)
@@ -7162,7 +7183,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                               result="task_failed", reason=control.return_note)
                             assignment_open = False
                         returned_id = control.task_binding.task_id
-                        control.deferred_task_versions[returned_id] = returned["task_version"]
+                        if not host_capacity_wait:
+                            control.deferred_task_versions[returned_id] = returned["task_version"]
                         worker_session.worker_task_binding = None
                         control.task_binding = None
                         worker_error = None
@@ -7171,6 +7193,17 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             f"Task #{returned_id} zurückgegeben ({control.return_note}); Worker arbeitet weiter",
                             "pending")
                         control.return_note = ""
+                        if host_capacity_wait:
+                            capacity_delay = _host_capacity_wait_delay(host_capacity_waits)
+                            if _update_worker_slot(control, {"status": "running", "task_id": None,
+                                    "current_activity": (
+                                        f"Task #{returned_id} zurückgegeben; lokale Ressourcenreserve belegt. "
+                                        f"Warte {capacity_delay:g} Sekunden ohne Task-Lease; danach neue Übernahme.")}) is None:
+                                break
+                            if not _wait_worker_backend_retry(control, capacity_delay):
+                                break
+                            prompt_to_run = initial_prompt
+                            continue
                         if _update_worker_slot(control, {"status": "running", "task_id": None,
                                 "current_activity": f"Task #{returned_id} zurückgegeben; suche nächste passende Aufgabe"}) is None:
                             break
@@ -7186,6 +7219,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                             f"{error_activity} Wiederaufnahme begrenzt beendet; erneut ausdrücklich starten."})
                     return
                 task_failures = 0
+                host_capacity_waits = 0
                 _note_worker_model_success()
                 resolved = getattr(worker_session, "resolved_model", None)
                 if isinstance(resolved, str) and resolved.strip():
