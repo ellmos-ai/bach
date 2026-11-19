@@ -285,3 +285,46 @@ def test_independent_native_proof_keeps_owner_until_accept(tmp_path, monkeypatch
     else:
         assert call() is accepted[0]
     assert HostInferenceGate().status()["active"] is False
+
+
+def test_ocean_resources_pin_contract_is_exact_29_files_at_0_2_0():
+    from hub._services import ocean_resources_provider as provider
+
+    pinned = provider.pin()
+    assert pinned["schema"] == "bach.ocean-resources-pin.v1"
+    assert pinned["version"] == "0.2.0"
+    assert pinned["commit"] == "a27591b8f00d25994cfc3405d5a89308f0a23555"
+    assert len(pinned["files"]) == 29
+    assert all(path.startswith("ocean_resources/") for path in pinned["files"])
+
+
+def test_verified_wired_resident_credit_delegates_strictly_through_load_verified(monkeypatch):
+    seen = {}
+
+    def fake_build(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(source="darwin-wired-metal-nocopy-vmstat.v2", bytes=16_842_752)
+
+    monkeypatch.setattr(
+        loading,
+        "load_verified",
+        lambda names: (
+            {"ocean_resources.model_loading": SimpleNamespace(build_wired_resident_credit=fake_build)}
+            if names == ("ocean_resources.model_loading",)
+            else pytest.fail(f"unexpected provider load: {names}")
+        ),
+    )
+    args = dict(
+        scope="scope-sentinel",
+        before_sample_epoch="epoch-1",
+        after_sample_epoch="epoch-1",
+        pre_commit_epoch="epoch-1",
+        platform_sample="vmstat-1",
+        observed_at=123.5,
+    )
+    credit = loading.verified_wired_resident_credit(**args)
+    assert credit.source == "darwin-wired-metal-nocopy-vmstat.v2"
+    assert credit.bytes == 16_842_752
+    assert seen == args
+    assert loading.native_resident_credit(api_size=19 * GIB, process_rss=20 * GIB) is None
+    assert GuardedModelPort.supports_load_pending is False

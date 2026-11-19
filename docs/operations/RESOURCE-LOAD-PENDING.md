@@ -46,6 +46,18 @@ noch durch die 6-GiB-Kaltstartschwelle ersetzt. Die Änderung an `chat_runtime.p
 gehört zum Control-Fingerprint und benötigt ein eigenes kontrolliertes
 Aktivierungsfenster.
 
+Der gepinnte `ocean-resources`-Stand (`a27591b8f00d25994cfc3405d5a89308f0a23555`,
+29 Paketdateien, Version `0.2.0`) stellt dafür den opt-in physischen Vertrag
+`ResidentCredit` v2 (`darwin-wired-metal-nocopy-vmstat.v2`), den signierten
+Plattform-Sensor `/usr/bin/vm_stat` (`A = page_size * (Pages_free +
+Pages_speculative + Pages_inactive)`), 3-Punkt-`WiredEpoch`-Fencing,
+`permit_unwire` (`DurableRetirement("RETIRED", ...)`) sowie den kooperativen
+`DarwinWiredWeightRunner` (`.safetensors` -> `MAP_PRIVATE|MAP_ANON` +
+`VM_INHERIT_NONE` + `mlock` -> Metal `bytesNoCopy` + GPU-Prüfkernel) bereit.
+BACH bindet ihn über `verified_wired_resident_credit(...)` strikt über
+`load_verified(...)` an. Für Stock Ollama `0.33.3` bleibt `supports_load_pending`
+unverändert `False` und der Broker-Grant bei `0 B`.
+
 ## Vorbereiteter Ablauf
 
 1. Der einzige Hostbroker akzeptiert eine ausdrücklich berechtigte, begrenzte
