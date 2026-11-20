@@ -1,32 +1,20 @@
 # Wiki-Index
 
-* python-agent.txt
-* cloud-integration.txt
-* health-assistant.txt
-* bio-harmonisierung.txt
-* europe-tourism.txt
-* api-gateway.txt
-* knowledge-graph.txt
-* wiki-konventionen.txt
+* json-grundlagen.txt
+* wiki_konventionen.txt
 
 ## Fachindex
 
-### bach
-* agentenreflexion.txt
-* fachwissen-agent.txt
+### datenformate
+* json-grundlagen.txt
 
-### cloud
-* aws-architektur.txt
-* azure-vm.txt
-* gcp-network.txt
-
-### medizin
-* icf.txt
-* labwerte.txt
-* medikamentendosierung.txt
+### meta-regeln
+* wiki_konventionen.txt
 
 ## Neuste Artikel (sortiert absteigend)
 
-* python-agent.txt (2026-10-29)
-* europe-tourism.txt (2026-10-28)
-* api-gateway.txt (2026-10-27)
+* json-grundlagen.txt (2026-11-10)
+* wiki_konventionen.txt (2026-10-30)
+
+# Bereinigung 2026-11-10: 15 Phantom-Eintraege entfernt (python-agent, cloud-integration, health-assistant, bio-harmonisierung, europe-tourism, api-gateway, knowledge-graph, agentenreflexion, fachwissen-agent, aws-architektur, azure-vm, gcp-network, icf, labwerte, medikamentendosierung), werden nach Wiederanlegen wieder aufgenommen.
+# Stand: 2026-11-10
