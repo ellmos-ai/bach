@@ -89,6 +89,7 @@ class WorkerTaskManageArgumentError(LeaseProtocolError):
         "decomposed_parent_completion": 'Zerlegung ist kein Abschluss: Gib für einen zerlegten Eltern-Task complete=false mit dem Teilstand an.',
         "review_detail_shape": 'Reviewdetail nur mit action="detail" und numerischer task_id der eigenen oder Zieltask anfordern; keine weiteren Felder.',
         "review_submit_shape": 'Review erlaubt nur detail oder eigenes submit_result mit genau action, task_id und result; complete und andere Taskaktionen sind hier nicht erlaubt.',
+        "review_verdict_shape": 'Reviewurteil abgelehnt, nichts gespeichert. In einer eigenen Antwort genau einen Aufruf task_manage(action="submit_result", task_id=<eigene ID>, result=<JSON>) senden; result ist ein JSON-Objekt mit genau status ("approved", "findings" oder "rejected"), summary (einzeilig ohne Zeilenumbrüche, höchstens 1200 Zeichen) und task_contract_met (true/false; approved nur mit true).',
         "detail_scope": 'Im gebundenen Lauf ist nur task_manage(action="detail", task_id=<eigene ID>) lesbar; andere Tasks sind hier nicht einsehbar.',
         "decompose_assignee": 'Teilaufgaben ohne assigned_to anlegen oder einen bekannten Bearbeiter wie OLLAMA nennen; Themen gehören in category.',
         "decompose_already_decomposed": 'Diese Aufgabe wurde bereits in Teilaufgaben zerlegt; keine erneute Zerlegung anlegen, sondern Zwischenstand mit submit_result(complete=false) zurückgeben.',
@@ -1515,10 +1516,14 @@ class WorkerLeaseBinding:
                             or self._model_execution_candidate is None
                             or self._review_grant._last_answer_sha256 is None
                             or answer_digest(self._review_grant._last_answer) !=
-                               self._review_grant._last_answer_sha256
-                            or _verdict_from_answer(self._review_grant._last_answer,
-                                                    self.task_id, args.get("result")) is None):
+                               self._review_grant._last_answer_sha256):
                         raise LeaseProtocolError("Reviewurteil ist nicht durch die bestätigte Modellantwort belegt")
+                    if _verdict_from_answer(self._review_grant._last_answer,
+                                            self.task_id, args.get("result")) is None:
+                        # Checked locally before any dispatch: nothing was applied, so this is
+                        # a correctable shape denial, not an unknown tool effect that would
+                        # quarantine the review and stop the worker (#4143, #4244).
+                        raise WorkerTaskManageArgumentError("review_verdict_shape")
             if action == "list":
                 if set(args) - {"action"}:
                     raise WorkerTaskManageArgumentError("list_fields")

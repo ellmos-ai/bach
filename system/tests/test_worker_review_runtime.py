@@ -443,6 +443,80 @@ def test_chat_runtime_captures_second_http_route_and_submits_its_confirmed_answe
     assert client.link_calls[0][1] is client.start_calls[1][2]
 
 
+def test_malformed_review_verdict_is_correctable_without_quarantine(monkeypatch):
+    """#4143/#4244: a verdict that fails the local shape check applied nothing.
+
+    It must surface as a correctable argument denial (lease stays active), not as an
+    unknown tool effect that blocks the review and stops the worker.
+    """
+    from hub._services.chat.worker_lease_binding import WorkerTaskManageArgumentError
+
+    backend = _backend()
+    client, binding, _stop, _ = _review_binding(backend)
+    runtime, session = _runtime_for(
+        backend, binding, allowed_tools=["task_manage", "read_file", "search_text"],
+    )
+    malformed = json.dumps({
+        "status": "approved",
+        "summary": "Zeile eins.\nZeile zwei.",
+        "task_contract_met": True,
+    }, ensure_ascii=False)
+    review_result = json.dumps({
+        "status": "approved",
+        "summary": "Zeile eins. Zeile zwei.",
+        "task_contract_met": True,
+    }, ensure_ascii=False)
+    responses = [
+        _tool_reply(MODEL, "task_manage", {
+            "action": "submit_result", "task_id": REVIEW_TASK_ID, "result": malformed}),
+        _tool_reply(MODEL, "task_manage", {
+            "action": "submit_result", "task_id": REVIEW_TASK_ID, "result": review_result}),
+    ]
+    _mock_openai_http(monkeypatch, responses)
+
+    from hub._services.chat import slots_config, worker_tool_dispatch_trace
+    from hub._services.chat.chat_runtime import _completion_reserve_tools
+    from hub._services.chat.worker_tool_dispatch_trace import TracedToolOutcome
+    denials = []
+
+    def execute_review_tool(active_binding, name, arguments, _execute):
+        assert name == "task_manage"
+        try:
+            result = active_binding.execute_task_manage(arguments)
+        except WorkerTaskManageArgumentError as exc:  # bach_tools maps this to ToolErrorText
+            denials.append(exc.reason)
+            result = exc.user_message
+        return TracedToolOutcome(status="returned", result=result, _binding=active_binding)
+
+    monkeypatch.setattr(worker_tool_dispatch_trace, "execute_normal_tool", execute_review_tool)
+    monkeypatch.setattr(
+        worker_tool_dispatch_trace, "acknowledge_normal_tool_result", lambda *_args: True,
+    )
+    monkeypatch.setattr(slots_config, "update_slot", lambda *_args, **_kwargs: None)
+
+    def bound_worker_tools(_session, _backend, *, enabled, completion_reserve=False):
+        if not enabled:
+            return []
+        tools = [_task_manage_tool()]
+        if completion_reserve:
+            return _completion_reserve_tools(tools, _session.worker_task_binding)
+        return tools
+
+    monkeypatch.setattr(runtime, "_bound_worker_tools_for_request", bound_worker_tools)
+    token = runtime._compute_turn_context.set((CHAT_ID, "background"))
+    try:
+        asyncio.run(runtime._tool_loop(
+            [{"role": "system", "content": "Review only the bound target."},
+             {"role": "user", "content": "Submit the verdict."}],
+            session, [_task_manage_tool()], backend=backend, model=MODEL,
+        ))
+    finally:
+        runtime._compute_turn_context.reset(token)
+
+    assert denials == ["review_verdict_shape"]
+    assert client.result_record["result"] == review_result
+
+
 @pytest.mark.parametrize(
     "denial", ["stopped", "route_mismatch", "unstamped_backend", "mutated_native_route"],
 )
