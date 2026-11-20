@@ -526,7 +526,9 @@ def initialize_slots_config(path: str | None = None) -> dict[str, Any]:
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f"{f.name}.init-{uuid.uuid4().hex}.tmp")
         try:
-            tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(cfg, indent=2, ensure_ascii=False))
             tmp.replace(f)
         finally:
             tmp.unlink(missing_ok=True)
@@ -650,7 +652,11 @@ def save_slots_config(config: dict[str, Any], path: str | None = None, *, durabl
         created = False
         try:
             f.parent.mkdir(parents=True, exist_ok=True)
-            with tmp.open("x", encoding="utf-8") as handle:
+            # Private by construction (0600): the slots file holds worker policy and the
+            # rollout operator requires private permissions; a later chmod would be undone
+            # by the next atomic replace.
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 created = True
                 handle.write(json.dumps(config, indent=2, ensure_ascii=False))
                 if durable:
