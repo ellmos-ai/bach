@@ -466,6 +466,7 @@ def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
             "schema": "bach.financial_summary.v1",
             "data_source": "unavailable",
             "data-source": "unavailable",
+            "source_checked": False,
             "summaries": [],
             "duplicate_subscription_rows": None,
             "reason_code": "financial_source_unavailable",
@@ -477,6 +478,7 @@ def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
         "schema": "bach.financial_summary.v1",
         "data_source": "measured",
         "data-source": "measured",
+        "source_checked": True,
         "summaries": summaries,
         "duplicate_subscription_rows": duplicate_rows,
     }

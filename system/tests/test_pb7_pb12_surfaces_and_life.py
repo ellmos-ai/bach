@@ -205,6 +205,7 @@ def test_pb12_financial_summary_measured(test_db: Path) -> None:
     assert summary.get("schema") == "bach.financial_summary.v1"
     assert summary.get("data_source") == "measured"
     assert summary.get("data-source") == "measured"
+    assert summary["source_checked"] is True
 
     summaries = summary.get("summaries", [])
     assert len(summaries) >= 2
@@ -221,6 +222,7 @@ def test_pb12_missing_financial_database_is_unavailable_and_not_created(tmp_path
     assert not missing.exists()
     assert summary["status"] == "unavailable"
     assert summary["data_source"] == summary["data-source"] == "unavailable"
+    assert summary["source_checked"] is False
     assert summary["summaries"] == []
     assert summary["duplicate_subscription_rows"] is None
 
@@ -262,6 +264,7 @@ def test_pb12_bad_financial_source_preserves_other_life_sections(
     overview = client.get("/api/life/overview")
     assert finance.status_code == overview.status_code == 200
     assert finance.json()["reason_code"] == "financial_source_unavailable"
+    assert finance.json()["source_checked"] is False
     assert finance.json()["summaries"] == []
     data = overview.json()
     assert data["status"] == "partial"
