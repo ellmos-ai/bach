@@ -6406,6 +6406,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 and control.model_request_budget is None
                 and custom_prompt in (None, "") and w.get("task_prompt") in (None, "")
             )
+            overrides_assignment = bool(custom_prompt and custom_prompt != w.get("task_prompt"))
             if custom_prompt:
                 initial_prompt = custom_prompt
             elif w.get("task_id") and not core_queue_task_pointer:
@@ -6771,10 +6772,19 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                 loop = asyncio.new_event_loop()
                 ans = ""
                 worker_session = None
+                stored_system_prompt = None
                 _turn_lease_exc = None
                 try:
                     try:
                         worker_session = runtime.get_session(worker_id)
+                        if overrides_assignment and (current_slot.get("task_prompt") or current_slot.get("prompt")):
+                            # Keep the per-run task in the user message. The profile's
+                            # default assignment must not compete from the system prompt.
+                            from hub._services.chat.slots_config import compose_worker_prompt
+                            stored_system_prompt = worker_session.custom_system_prompt
+                            worker_session.custom_system_prompt = compose_worker_prompt({
+                                **current_slot, "task_prompt": "", "prompt": "",
+                            })
                         worker_session.worker_slot_reader = control.slot_policy_reader
                         worker_session.worker_handoff = control.handoff
                         worker_session.worker_task_actions = control.task_actions
@@ -6800,6 +6810,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         )
                     finally:
                         if worker_session is not None:
+                            if stored_system_prompt is not None:
+                                worker_session.custom_system_prompt = stored_system_prompt
                             worker_session._persistent_core_model_call_control = None
                             worker_session.worker_model_request_control = None
                             worker_session.model_request_budget = None

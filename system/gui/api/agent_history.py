@@ -272,14 +272,13 @@ async def resume_session(request: Request,
         version = source.get("configuration_version") if isinstance(source, dict) else None
         if not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{64}", version):
             raise WorkerStatusUnavailable("Konfigurationsversion nicht ermittelbar")
-        changes = {"task_prompt": zettel}
         if model:
-            changes["model"] = model
-        updated = await asyncio.to_thread(
-            update_worker_configuration, worker_id, version, changes, device_token=device_token)
+            updated = await asyncio.to_thread(
+                update_worker_configuration, worker_id, version, {"model": model}, device_token=device_token)
+            version = updated["configuration_version"]
         start_result = await asyncio.to_thread(
             start_worker, worker_id, device_token=device_token, timeout=15.0,
-            expected_worker_configuration_version=updated["configuration_version"])
+            expected_worker_configuration_version=version, run_prompt=zettel)
     except WorkerActionRejected as exc:
         raise HTTPException(getattr(exc, "status_code", 409), str(exc))
     except WorkerStatusUnavailable as exc:

@@ -316,6 +316,7 @@ def test_session_include_tools_and_resume_with_selected_model(history, monkeypat
     def fake_start_worker(worker_id, **kwargs):
         assert kwargs["expected_worker_configuration_version"] == "b" * 64
         recorded["started"] = worker_id
+        recorded["run_prompt"] = kwargs["run_prompt"]
         return {"status": "running", "worker_id": worker_id}
 
     monkeypatch.setattr(worker_status_adapter, "_request_control_api", fake_request_control_api)
@@ -331,10 +332,10 @@ def test_session_include_tools_and_resume_with_selected_model(history, monkeypat
     assert body["ok"] is True
     assert body["worker_id"] == "worker-cloud-1"
     assert body["model"] == "claude-sonnet-4-6"
-    assert recorded["changes"]["model"] == "claude-sonnet-4-6"
-    assert "Untersuche #2496" in recorded["changes"]["task_prompt"]
-    assert "Assistent|FEHLGESCHLAGEN" in recorded["changes"]["task_prompt"]
-    assert "NUTZERHINWEIS: Behebe #2496" in recorded["changes"]["task_prompt"]
+    assert recorded["changes"] == {"model": "claude-sonnet-4-6"}
+    assert "Untersuche #2496" in recorded["run_prompt"]
+    assert "Assistent|FEHLGESCHLAGEN" in recorded["run_prompt"]
+    assert "NUTZERHINWEIS: Behebe #2496" in recorded["run_prompt"]
 
 
 def test_resume_note_excludes_hidden_system_context():
@@ -364,7 +365,8 @@ def test_resume_uses_native_worker_cas_before_start(history, tmp_path, monkeypat
     snapshot_id = client.get("/api/agent-history/sessions").json()["sessions"][0]["id"]
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
-    worker = slots.add_worker({"name": "Resume fixture", "backend": "ollama", "model": "fixture-model"}, path=path)
+    worker = slots.add_worker({"name": "Resume fixture", "backend": "ollama", "model": "fixture-model",
+                               "task_prompt": "Existing default assignment"}, path=path)
     worker_id = worker["id"]
     global_version = slots.core_system_agents_snapshot(path)["configuration_version"]
     assert global_version != slots.worker_configuration_snapshot(worker_id, path=path)["configuration_version"]
@@ -394,7 +396,9 @@ def test_resume_uses_native_worker_cas_before_start(history, tmp_path, monkeypat
         assert kwargs["expected_worker_configuration_version"] == slots.worker_configuration_snapshot(worker_id, path=path)["configuration_version"]
         saved = slots.get_worker_slot(worker_id, path=path)
         assert saved["model"] == "fixture-selected-model"
-        assert "PRIVATE_RESUME_FIXTURE" not in saved["task_prompt"]
+        assert saved["task_prompt"] == "Existing default assignment"
+        assert "Setze die synthetische Aufgabe fort" in kwargs["run_prompt"]
+        assert "PRIVATE_RESUME_FIXTURE" not in kwargs["run_prompt"]
         starts.append(requested_id)
         return {"status": "running", "worker_id": requested_id}
 
@@ -414,8 +418,11 @@ def test_resume_uses_native_worker_cas_before_start(history, tmp_path, monkeypat
         assert starts == [worker_id]
 
 
-@pytest.mark.parametrize("race", [None, "after_ack", "before_admission"])
-def test_resume_start_is_bound_at_native_admission(history, tmp_path, monkeypatch, race):
+@pytest.mark.parametrize(("scenario", "status"), [
+    ("accepted", 200), ("after_profile_read", 409), ("before_admission", 409),
+    ("not_ready", 503), ("denied", 409), ("control_unavailable", 503),
+])
+def test_resume_start_is_bound_at_native_admission(history, tmp_path, monkeypatch, scenario, status):
     from gui.api import worker_status_adapter as adapter
     from hub._services.chat import slots_config as slots
 
@@ -425,7 +432,9 @@ def test_resume_start_is_bound_at_native_admission(history, tmp_path, monkeypatc
     path = str(tmp_path / "admission-slots.json")
     slots.initialize_slots_config(path)
     worker_id = slots.add_worker({"name": "Bound resume fixture", "backend": "ollama",
-                                  "model": "fixture-original-model"}, path=path)["id"]
+                                  "model": "fixture-original-model",
+                                  "task_prompt": "Existing default assignment"}, path=path)["id"]
+    original_bytes = Path(path).read_bytes()
     starts, writes = [], []
     service_instance = "1" * 32
 
@@ -438,48 +447,42 @@ def test_resume_start_is_bound_at_native_admission(history, tmp_path, monkeypatc
     def control(method, endpoint, *, params=None, body=None, **kwargs):
         if (method, endpoint) == ("GET", "workers/configuration"):
             assert params == {"id": worker_id}
-            return {"ok": True, **slots.worker_configuration_snapshot(worker_id, path=path)}
+            observed = slots.worker_configuration_snapshot(worker_id, path=path)
+            if scenario == "after_profile_read" and not writes:
+                concurrent_write()
+            return {"ok": True, **observed}
         if (method, endpoint) == ("GET", "system-slots"):
             return {**slots.core_system_agents_snapshot(path), "service_instance": service_instance}
-        if (method, endpoint) == ("POST", "workers/configuration"):
-            return {"ok": True, **slots.change_worker_configuration(
-                worker_id, body["configuration_version"], body["changes"], path=path)}
         if (method, endpoint) == ("GET", "readiness"):
-            return {"available": True}
+            return {"available": scenario != "not_ready"}
         assert (method, endpoint) == ("POST", "workers/run")
-        if race == "before_admission":
+        if scenario == "denied":
+            raise adapter.WorkerActionRejected("Worker läuft bereits", 409)
+        if scenario == "control_unavailable":
+            raise adapter.WorkerStatusUnavailable("Lokale Control-API nicht erreichbar")
+        if scenario == "before_admission":
             concurrent_write()
         with slots.worker_admission_transaction(path):
             try:
-                admitted = (slots.system_worker_at_version(worker_id, body["configuration_version"], path=path)
-                            if "configuration_version" in body else slots.get_worker_slot(worker_id, path=path))
+                admitted = slots.system_worker_at_version(worker_id, body["configuration_version"], path=path)
             except RuntimeError as exc:
                 raise adapter.WorkerActionRejected(str(exc), 409) from None
-            if "configuration_version" in body:
-                assert body["expected_service_instance"] == service_instance
-                assert len(body["start_request_id"]) == 32
-            starts.append({"prompt": body.get("prompt") or admitted["task_prompt"], "model": admitted["model"]})
+            assert body["expected_service_instance"] == service_instance
+            assert len(body["start_request_id"]) == 32
+            assert admitted["task_prompt"] == "Existing default assignment"
+            starts.append({"prompt": body["prompt"], "model": admitted["model"]})
         return {"ok": True, "id": worker_id}
-
-    original_update = adapter.update_worker_configuration
-
-    def update(*args, **kwargs):
-        observed = original_update(*args, **kwargs)
-        if race == "after_ack":
-            concurrent_write()
-        return observed
 
     monkeypatch.setattr(adapter, "_request_control_api", control)
     monkeypatch.setattr(adapter, "read_worker_status", lambda **kwargs: {
         "workers": [{"id": worker_id, "status": "idle"}]})
-    monkeypatch.setattr(adapter, "update_worker_configuration", update)
-    monkeypatch.setattr(adapter, "_configured_task_prompt", lambda requested_id: slots.get_worker_slot(requested_id, path=path)["task_prompt"])
     response = client.post(f"/api/agent-history/sessions/{snapshot_id}/resume", json={"worker_id": worker_id})
-    assert response.status_code == (409 if race else 200), response.json()
-    if race:
+    assert response.status_code == status, response.json()
+    assert Path(path).read_bytes() == (writes[0] if writes else original_bytes)
+    if status != 200:
         assert not starts
-        assert Path(path).read_bytes() == writes[0]
     else:
+        assert response.json()["start"]["start_acknowledged"] is True
         assert len(starts) == 1
         assert "ORIGINAL_RESUME_ASSIGNMENT" in starts[0]["prompt"]
         assert starts[0]["model"] == "fixture-original-model"
