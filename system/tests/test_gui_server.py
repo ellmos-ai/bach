@@ -840,7 +840,8 @@ def test_http_disconnect_real_gui_control_tcp_and_reconnect(
             await writer.wait_closed()
             await asyncio.wait_for(stopped.wait(), 3)
             for _ in range(100):
-                if first.snapshot()["state"] == "aborted":
+                state = first.snapshot()
+                if state["state"] == "aborted" and state["cleanup_complete"]:
                     break
                 await asyncio.sleep(0.01)
             state = first.snapshot()
