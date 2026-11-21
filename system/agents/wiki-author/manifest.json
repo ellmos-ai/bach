@@ -1,0 +1,17 @@
+{
+  "name": "wiki-author",
+  "version": "1.0.0",
+  "type": "agent",
+  "author": "BACH",
+  "created": "2026-10-30",
+  "updated": "2026-10-30",
+  "orchestrates": {
+    "experts": [],
+    "services": []
+  },
+  "dependencies": {
+    "tools": [],
+    "workflows": []
+  },
+  "description": "Wiki-Author-Workflow-Agent: Wählt Experten aus, identifiziert Wissenslücken, führt Web-Recherche durch und erstellt Wiki-Beiträge gemäß systematischer BACH-Wissensbasis-Erweiterungsrichtlinie."
+}
