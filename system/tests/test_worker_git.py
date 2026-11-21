@@ -1,8 +1,11 @@
 """Tests für worker_git.py und den Schutz des Live-Ordners (Task #1361)."""
 from __future__ import annotations
 
+import json
 import sqlite3
 import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +21,89 @@ from hub.worker_git import (
     start_task_worktree,
     task_has_file_changes,
 )
+
+
+@pytest.mark.parametrize("allow", [True, False])
+def test_macos_source_provisioning_stages_outside_live_root(tmp_path, monkeypatch, allow):
+    from hub._services.chat import worker_repo_registry as registry
+
+    home = tmp_path.resolve()
+    sha = "a" * 40
+    repo_id = "ellmos-ai/bach"
+    origin = "https://github.com/" + repo_id
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(worker_git, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(registry, "load_registry", lambda: {"repositories": {
+        repo_id: {"origin": origin, "default_branch": "main"}
+    }})
+    monkeypatch.setattr(worker_git, "_trusted_commit_identity", lambda repo: None)
+    monkeypatch.setattr(worker_git, "_public_default_branch_metadata", lambda *a: {"source_sha": sha})
+    monkeypatch.setattr(worker_git, "_public_main_source", lambda *a: {"source_sha": sha, "origin": origin})
+    monkeypatch.setattr(worker_git, "_seed_staged_commit_identity", lambda *a: None)
+    monkeypatch.setattr(worker_git, "_require_source_commit_identity", lambda *a: None)
+
+    def clone(argv, **kwargs):
+        assert argv[:2] == ["git", "clone"]
+        stage = Path(argv[-1])
+        assert stage.parent.parent == home
+        assert home / ".bach" not in stage.parents
+        (stage / "system").mkdir(parents=True)
+        return SimpleNamespace(returncode=0)
+
+    def guard(root, stage, missing_parents):
+        assert root == home / ".bach"
+        assert (stage / "system").is_dir()
+        assert missing_parents == 3
+        if not allow:
+            raise RuntimeError("Sperrscan mit Verzeichnisreserve nicht bestätigt")
+
+    monkeypatch.setattr(worker_git.subprocess, "run", clone)
+    monkeypatch.setattr(worker_git, "_guard_public_source_capacity", guard)
+    if allow:
+        result = worker_git.provision_public_source_clone(repo_id)
+        assert result["created"] is True
+        assert (Path(result["path"]) / "system").is_dir()
+        assert worker_git.provision_public_source_clone(repo_id)["created"] is False
+    else:
+        with pytest.raises(RuntimeError, match="Verzeichnisreserve"):
+            worker_git.provision_public_source_clone(repo_id)
+        assert not (home / ".bach" / "task-repo-sources").exists()
+    assert not list(home.glob(".bach-source-*"))
+
+
+@pytest.mark.parametrize("complete", [True, False])
+def test_public_source_capacity_only_reduces_scanner_limit(tmp_path, monkeypatch, complete):
+    from hub._services.chat import worker_write_guard as guard
+
+    root = tmp_path / ".bach"
+    root.mkdir()
+    stage = tmp_path / "staging" / "clone"
+    (stage / "system" / "hub").mkdir(parents=True)
+    (stage / ".git" / "objects" / "pack").mkdir(parents=True)
+    scanner = tmp_path / "locktools" / "lock_scan.py"
+    scanner.parent.mkdir()
+    config = scanner.with_name("lock_roots.json")
+    original = {"check_dir_max_descendants": 10, "twin_resolution": {"no_mirror_manifests": []}}
+    config.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.setattr(guard, "_scanner_path", lambda: scanner)
+    monkeypatch.setattr(guard, "_scan_locks", lambda path: {"descendants_complete": path == stage})
+
+    def scan(argv, **kwargs):
+        applied = Path(argv[argv.index("--roots-file") + 1])
+        assert applied.parent == stage.parent
+        assert json.loads(applied.read_text(encoding="utf-8")) == {**original, "check_dir_max_descendants": 5}
+        return SimpleNamespace(returncode=0 if complete else 1, stdout=json.dumps({
+            "checked": str(root), "descendants_complete": complete, "twin_status": "not-applicable",
+            "locks": [], "hook_guards": [],
+        }))
+
+    monkeypatch.setattr(worker_git.subprocess, "run", scan)
+    if complete:
+        worker_git._guard_public_source_capacity(root, stage, 2)
+    else:
+        with pytest.raises(RuntimeError, match="Verzeichnisreserve"):
+            worker_git._guard_public_source_capacity(root, stage, 2)
+    assert json.loads(config.read_text(encoding="utf-8")) == original
 
 
 class TestLivePathProtection:

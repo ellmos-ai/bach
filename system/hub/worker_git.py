@@ -24,6 +24,7 @@ import socket
 import sqlite3
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -468,15 +469,56 @@ def _seed_staged_commit_identity(stage: Path, repository: str) -> None:
     _require_source_commit_identity(stage, repository)
 
 
+def _guard_public_source_capacity(bach_root: Path, stage: Path, missing_parents: int) -> None:
+    """Reserve the checkout's directory footprint in the macOS maintenance scan."""
+    from hub._services.chat.worker_write_guard import _darwin_hydrate_argv, _scan_locks, _scanner_path
+
+    def raise_walk_error(error):
+        raise error
+
+    scanner = _scanner_path()
+    config_path = scanner.with_name("lock_roots.json")
+    try:
+        config_bytes = config_path.read_bytes()
+        config = json.loads(config_bytes)
+        limit = config.get("check_dir_max_descendants", 1024)
+        if type(limit) is not int or not 1 <= limit <= 1_000_000:
+            raise ValueError("invalid lock scanner directory limit")
+        reserve = 1 + missing_parents
+        for _, directories, _ in os.walk(stage, onerror=raise_walk_error, followlinks=False):
+            # .git is excluded by both deployed and current full lock scanners.
+            directories[:] = [name for name in directories if name != ".git"]
+            reserve += len(directories)
+        if reserve >= limit:
+            raise RuntimeError("Public-Source-Clone überschreitet das Verzeichnisbudget des Sperrscans")
+        if _scan_locks(stage).get("descendants_complete") is not True:
+            raise RuntimeError("Public-Source-Staging konnte nicht vollständig geprüft werden")
+        config["check_dir_max_descendants"] = limit - reserve
+        reduced_config = stage.parent / "lock_roots-reserved.json"
+        reduced_config.write_text(json.dumps(config), encoding="utf-8")
+        cmd = [sys.executable, "-S", str(scanner), "--roots-file", str(reduced_config),
+               "--check-dir", str(bach_root), "--json"]
+        result = subprocess.run(_darwin_hydrate_argv(cmd, run_fn=subprocess.run),
+                                cwd=str(bach_root), capture_output=True, text=True, encoding="utf-8",
+                                stdin=subprocess.DEVNULL, timeout=15, check=False)
+        receipt = json.loads(result.stdout)
+        if (result.returncode != 0 or receipt.get("checked") != str(bach_root)
+                or receipt.get("descendants_complete") is not True
+                or receipt.get("locks") != [] or receipt.get("hook_guards") != []
+                or receipt.get("twin_status") not in {"ok", "not-applicable"}
+                or config_path.read_bytes() != config_bytes):
+            raise RuntimeError("Sperrscan mit Verzeichnisreserve für den Public-Source-Clone nicht bestätigt")
+    except (OSError, ValueError, AttributeError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("Verzeichnisreserve des Sperrscans konnte nicht geprüft werden") from exc
+
+
 def provision_public_source_clone(repository_id: str) -> dict[str, Any]:
     """Explicit operator step: stage and validate an immutable public-default clone.
 
     This function is intentionally never called by task-start or pre-tool hooks.
     It creates a new SHA-addressed source tree and never updates an existing one.
     """
-    import tempfile
-    import shutil
-    import stat
+    from hub._services.user_config_store import _exclusive_lock
     from hub._services.chat.worker_repo_registry import (
         RepositoryBindingError, load_registry, source_clone_path,
     )
@@ -489,31 +531,31 @@ def provision_public_source_clone(repository_id: str) -> dict[str, Any]:
         _trusted_commit_identity(repository_id)
         metadata = _public_default_branch_metadata(repository_id, record["default_branch"])
         final_path = source_clone_path(repository_id, str(metadata["source_sha"]))
-        fixed_root = (Path.home() / ".bach" / "task-repo-sources").resolve(strict=False)
+        home = Path.home()
+        bach_root = home / ".bach"
+        fixed_root = bach_root / "task-repo-sources"
+        if home.resolve(strict=True) != home or bach_root.is_symlink():
+            raise RepositoryBindingError("Public-Source-Root ist nicht physisch gebunden")
         if final_path.resolve(strict=False) != final_path or not str(final_path).startswith(str(fixed_root) + os.sep):
             raise RepositoryBindingError("Public-Source-Pfad liegt außerhalb des geschützten Source-Verzeichnisses")
-        cursor = fixed_root
-        if cursor.is_symlink():
-            raise RepositoryBindingError("Public-Source-Verzeichnis ist ein Link")
-        fixed_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if not fixed_root.exists():
-            fixed_root.mkdir(mode=0o700)
-        source_root_stat = fixed_root.stat()
-        if (not stat.S_ISDIR(source_root_stat.st_mode)
-                or (os.name != "nt" and source_root_stat.st_mode & 0o077)
-                or (os.name != "nt" and hasattr(os, "getuid") and source_root_stat.st_uid != os.getuid())):
-            raise RepositoryBindingError("Public-Source-Verzeichnis ist nicht geschützt")
-        for part in final_path.parent.relative_to(fixed_root).parts:
-            cursor = cursor / part
-            if cursor.is_symlink():
-                raise RepositoryBindingError("Public-Source-Pfad enthält einen Link")
-            if not cursor.exists():
-                cursor.mkdir(mode=0o700)
-            entry_stat = cursor.stat()
-            if (not stat.S_ISDIR(entry_stat.st_mode)
-                    or (os.name != "nt" and entry_stat.st_mode & 0o077)
-                    or (os.name != "nt" and hasattr(os, "getuid") and entry_stat.st_uid != os.getuid())):
-                raise RepositoryBindingError("Public-Source-Pfad ist nicht geschützt")
+        bach_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        parents = [path for path in reversed(final_path.parents) if bach_root in path.parents]
+
+        def missing_source_parents():
+            missing = []
+            for path in [bach_root, *parents]:
+                if path.is_symlink():
+                    raise RepositoryBindingError("Public-Source-Pfad enthält einen Link")
+                if not path.exists():
+                    missing.append(path)
+                    continue
+                info = path.stat()
+                if (not stat.S_ISDIR(info.st_mode) or
+                        (os.name != "nt" and (stat.S_IMODE(info.st_mode) & 0o077 or info.st_uid != os.getuid()))):
+                    raise RepositoryBindingError("Public-Source-Pfad ist nicht geschützt")
+            return missing
+
+        missing_source_parents()
         if final_path.is_symlink():
             raise RepositoryBindingError("Public-Source-Clone ist ein Link")
         if final_path.exists():
@@ -524,7 +566,8 @@ def provision_public_source_clone(repository_id: str) -> dict[str, Any]:
             _require_source_commit_identity(final_path, repository_id)
             return {"repository": repository_id, "source_sha": str(metadata["source_sha"]),
                     "path": str(final_path), "created": False}
-        stage_parent = Path(tempfile.mkdtemp(prefix=".provision-", dir=str(final_path.parent)))
+        # The staging checkout must not consume capacity in the protected live tree.
+        stage_parent = Path(tempfile.mkdtemp(prefix=".bach-source-", dir=str(home)))
         stage = stage_parent / "clone"
         try:
             global_config = stage_parent / "empty.gitconfig"
@@ -540,19 +583,29 @@ def provision_public_source_clone(repository_id: str) -> dict[str, Any]:
                 raise RuntimeError("Public-Source-Provisionierung fehlgeschlagen")
             proof = _public_main_source(stage, type("Binding", (), {
                 "repository": repository_id, "default_branch": record["default_branch"]})())
-            current = _public_default_branch_metadata(repository_id, record["default_branch"])
-            if proof["source_sha"] != metadata["source_sha"] or current["source_sha"] != metadata["source_sha"]:
+            if proof["source_sha"] != metadata["source_sha"]:
                 raise RuntimeError("Öffentlicher Default-Branch änderte sich während der Source-Provisionierung")
             _seed_staged_commit_identity(stage, repository_id)
-            try:
-                os.replace(stage, final_path)
-            except OSError:
-                if not final_path.exists() or final_path.is_symlink():
-                    raise RuntimeError("Public-Source-Clone konnte nicht atomar bereitgestellt werden") from None
-                proof = _public_main_source(final_path, type("Binding", (), {
-                    "repository": repository_id, "default_branch": record["default_branch"]})())
-                if proof["source_sha"] != metadata["source_sha"]:
-                    raise RuntimeError("Parallele Public-Source-Provisionierung ergab einen anderen Pin")
+            with _exclusive_lock(bach_root / "public-source-provision", timeout_seconds=30):
+                missing = missing_source_parents()
+                if final_path.is_symlink():
+                    raise RepositoryBindingError("Public-Source-Clone ist ein Link")
+                created = not final_path.exists()
+                if created:
+                    current = _public_default_branch_metadata(repository_id, record["default_branch"])
+                    if current["source_sha"] != metadata["source_sha"]:
+                        raise RuntimeError("Öffentlicher Default-Branch änderte sich während der Source-Provisionierung")
+                    existing_parent = missing[0].parent if missing else final_path.parent
+                    if stage.stat().st_dev != existing_parent.stat().st_dev:
+                        raise RuntimeError("Public-Source-Staging liegt auf einem anderen Dateisystem")
+                    if sys.platform == "darwin":
+                        _guard_public_source_capacity(bach_root, stage, len(missing))
+                    for path in missing:
+                        path.mkdir(mode=0o700)
+                    try:
+                        os.replace(stage, final_path)
+                    except OSError:
+                        raise RuntimeError("Public-Source-Clone konnte nicht atomar bereitgestellt werden") from None
             check = _public_main_source(final_path, type("Binding", (), {
                 "repository": repository_id, "default_branch": record["default_branch"]})())
             if check["source_sha"] != metadata["source_sha"]:
@@ -561,7 +614,7 @@ def provision_public_source_clone(repository_id: str) -> dict[str, Any]:
         finally:
             shutil.rmtree(stage_parent, ignore_errors=True)
         return {"repository": repository_id, "source_sha": str(metadata["source_sha"]),
-                "path": str(final_path), "created": True}
+                "path": str(final_path), "created": created}
     except RepositoryBindingError as exc:
         raise RuntimeError(str(exc)) from None
 
