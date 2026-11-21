@@ -6,7 +6,7 @@ import json
 import logging
 import sqlite3
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -215,6 +215,61 @@ def test_pb12_financial_summary_measured(test_db: Path) -> None:
     assert month_summary["anzahl_abos"] == 1
 
 
+def test_pb12_missing_financial_database_is_unavailable_and_not_created(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.db"
+    summary = get_financial_summary(missing)
+    assert not missing.exists()
+    assert summary["status"] == "unavailable"
+    assert summary["data_source"] == summary["data-source"] == "unavailable"
+    assert summary["summaries"] == []
+    assert summary["duplicate_subscription_rows"] is None
+
+
+def test_pb12_initialized_empty_financial_source_measures_zero(tmp_path: Path) -> None:
+    empty = tmp_path / "initialized.db"
+    with sqlite3.connect(empty) as conn:
+        conn.executescript(TEST_SCHEMA)
+    summary = get_financial_summary(empty)
+    assert summary["status"] == "ok" and summary["data_source"] == "measured"
+    assert len(summary["summaries"]) == 2
+    assert all(row["total_ausgaben"] == row["total_abos"] == 0 for row in summary["summaries"])
+
+
+def test_pb12_life_financial_periods_exclude_future_mail(test_db: Path) -> None:
+    with sqlite3.connect(test_db) as conn:
+        conn.execute("UPDATE financial_emails SET email_date=?", ((date.today() + timedelta(days=1)).isoformat(),))
+    summary = get_financial_summary(test_db)
+    assert summary["data_source"] == "measured"
+    assert all(row["total_ausgaben"] == 0 for row in summary["summaries"])
+    assert summary["summaries"][0]["total_abos"] == 9.99
+
+
+@pytest.mark.parametrize("statement", [
+    "DROP TABLE financial_emails",
+    "UPDATE financial_emails SET email_date='synthetic invalid date'",
+    "INSERT INTO financial_summary(jahr, monat) VALUES (2026, 11), (2026, 11)",
+])
+def test_pb12_bad_financial_source_preserves_other_life_sections(
+    test_db: Path, monkeypatch: pytest.MonkeyPatch, statement: str
+) -> None:
+    from gui import server
+
+    with sqlite3.connect(test_db) as conn:
+        conn.execute(statement)
+    monkeypatch.setattr(server, "BACH_DB", test_db)
+    client = TestClient(app)
+    finance = client.get("/api/financial/summary")
+    overview = client.get("/api/life/overview")
+    assert finance.status_code == overview.status_code == 200
+    assert finance.json()["reason_code"] == "financial_source_unavailable"
+    assert finance.json()["summaries"] == []
+    data = overview.json()
+    assert data["status"] == "partial"
+    assert data["data_source"] == data["data-source"] == "partial"
+    assert data["finance"] == {"data_source": "unavailable", "reason_code": "financial_source_unavailable"}
+    assert data["routines"]["total"] == 2
+
+
 def test_pb12_life_overview_measured(test_db: Path) -> None:
     """Verify /api/life/overview aggregates local-only measured sections."""
     overview = get_life_overview(test_db)
@@ -331,8 +386,11 @@ def test_pb12_privacy_guard_no_pii_in_logs_or_errors(tmp_path: Path, caplog: pyt
 
 # ── FASTAPI ROUTE INTEGRATION TESTS ──
 
-def test_fastapi_server_endpoints_pb7_pb12() -> None:
+def test_fastapi_server_endpoints_pb7_pb12(test_db: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify FastAPI server exposes /api/modules/surfaces, /api/financial/summary, and /api/life/overview."""
+    from gui import server
+
+    monkeypatch.setattr(server, "BACH_DB", test_db)
     client = TestClient(app)
 
     # 1. GET /api/modules/surfaces

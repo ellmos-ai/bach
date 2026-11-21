@@ -416,10 +416,8 @@ def get_module_surfaces_matrix() -> dict[str, Any]:
 def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
     """Build measured financial summary snapshot using FinancialSummaryService.
 
-    Guarantees:
-      - data_source: 'measured'
-      - counts/totals only
-      - sanitized categories/output; no raw personal/banking data
+    A measured response contains counts, totals and sanitized category labels.
+    If the source cannot be read reliably, there are no published amounts.
     """
     if db_path is None:
         from hub.bach_paths import BACH_DB
@@ -427,7 +425,6 @@ def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
 
     today = date.today()
     summaries: list[dict[str, Any]] = []
-    duplicate_rows = 0
 
     try:
         from hub._services.financial.summary_service import (
@@ -437,8 +434,11 @@ def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
 
         service = FinancialSummaryService(Path(db_path))
         result = service.calculate(today=today)
-        raw_summaries = result.get("summaries", [])
-        duplicate_rows = result.get("duplicate_subscription_rows", 0)
+        diagnostic_fields = ("invalid_dates", "invalid_mail_amounts", "invalid_subscription_amounts")
+        if any(result[key] for key in diagnostic_fields):
+            raise FinancialSummaryError("Unvollständige Finanzdaten")
+        raw_summaries = result["summaries"]
+        duplicate_rows = result["duplicate_subscription_rows"]
 
         for s in raw_summaries:
             raw_cats = s.get("summen_kategorie", "{}")
@@ -450,40 +450,26 @@ def get_financial_summary(db_path: Path | None = None) -> dict[str, Any]:
                 s["summen_kategorie"] = "{}"
 
             summaries.append({
-                "jahr": s.get("jahr", today.year),
-                "monat": s.get("monat"),
-                "summen_kategorie": s.get("summen_kategorie", "{}"),
-                "total_ausgaben": float(s.get("total_ausgaben", 0.0)),
-                "total_steuer_relevant": float(s.get("total_steuer_relevant", 0.0)),
-                "total_abos": float(s.get("total_abos", 0.0)),
-                "anzahl_rechnungen": int(s.get("anzahl_rechnungen", 0)),
-                "anzahl_abos": int(s.get("anzahl_abos", 0)),
+                "jahr": s["jahr"],
+                "monat": s["monat"],
+                "summen_kategorie": s["summen_kategorie"],
+                "total_ausgaben": s["total_ausgaben"],
+                "total_steuer_relevant": s["total_steuer_relevant"],
+                "total_abos": s["total_abos"],
+                "anzahl_rechnungen": s["anzahl_rechnungen"],
+                "anzahl_abos": s["anzahl_abos"],
             })
     except Exception as exc:
-        # Table missing or uninitialized: produce clean measured zero snapshot
-        logger.info("FinancialSummaryService fallback (uninitialized tables): %s", type(exc).__name__)
-        summaries = [
-            {
-                "jahr": today.year,
-                "monat": today.month,
-                "summen_kategorie": "{}",
-                "total_ausgaben": 0.0,
-                "total_steuer_relevant": 0.0,
-                "total_abos": 0.0,
-                "anzahl_rechnungen": 0,
-                "anzahl_abos": 0,
-            },
-            {
-                "jahr": today.year,
-                "monat": None,
-                "summen_kategorie": "{}",
-                "total_ausgaben": 0.0,
-                "total_steuer_relevant": 0.0,
-                "total_abos": 0.0,
-                "anzahl_rechnungen": 0,
-                "anzahl_abos": 0,
-            },
-        ]
+        logger.info("Financial summary unavailable: %s", type(exc).__name__)
+        return {
+            "status": "unavailable",
+            "schema": "bach.financial_summary.v1",
+            "data_source": "unavailable",
+            "data-source": "unavailable",
+            "summaries": [],
+            "duplicate_subscription_rows": None,
+            "reason_code": "financial_source_unavailable",
+        }
 
     logger.info("Measured financial summary snapshot ready: %d periods calculated", len(summaries))
     return {
@@ -642,34 +628,25 @@ def get_life_overview(db_path: Path | None = None) -> dict[str, Any]:
       - tasks_sequences: open tasks & MarbleRun sequences
     """
     finance_raw = get_financial_summary(db_path)
-    summaries = finance_raw.get("summaries", [])
-    month_summary = summaries[0] if summaries else {}
-
-    finance_block = {
-        "data_source": "measured",
-        "total_ausgaben": month_summary.get("total_ausgaben", 0.0),
-        "total_abos": month_summary.get("total_abos", 0.0),
-        "total_steuer_relevant": month_summary.get("total_steuer_relevant", 0.0),
-        "anzahl_rechnungen": month_summary.get("anzahl_rechnungen", 0),
-        "anzahl_abos": month_summary.get("anzahl_abos", 0),
-    }
+    finance_measured = finance_raw["status"] == "ok"
+    if finance_measured:
+        month_summary = finance_raw["summaries"][0]
+        finance_block = {
+            "data_source": "measured",
+            **{key: month_summary[key] for key in ("total_ausgaben", "total_abos",
+                "total_steuer_relevant", "anzahl_rechnungen", "anzahl_abos")},
+        }
+    else:
+        finance_block = {"data_source": "unavailable", "reason_code": finance_raw["reason_code"]}
     routines_block = get_routines_summary(db_path)
     health_block = get_health_energy_summary(db_path)
     tasks_block = get_tasks_sequences_summary(db_path)
 
-    logger.info(
-        "Life overview measured: rechnungen=%d, routines_total=%d, spoons_left=%d, open_tasks=%d",
-        finance_block["anzahl_rechnungen"],
-        routines_block["total"],
-        health_block["spoon_budget"]["spoons_remaining"],
-        tasks_block["open_tasks"],
-    )
-
     return {
-        "status": "ok",
+        "status": "ok" if finance_measured else "partial",
         "schema": "bach.life_overview.v1",
-        "data_source": "measured",
-        "data-source": "measured",
+        "data_source": "measured" if finance_measured else "partial",
+        "data-source": "measured" if finance_measured else "partial",
         "finance": finance_block,
         "routines": routines_block,
         "health_energy": health_block,

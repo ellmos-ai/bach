@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
@@ -61,8 +62,9 @@ class FinancialSummaryService:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
+    def _connect(self, *, writable: bool = False) -> sqlite3.Connection:
+        conn = (sqlite3.connect(str(self.db_path)) if writable
+                else sqlite3.connect(self.db_path.resolve().as_uri() + "?mode=ro", uri=True))
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -190,7 +192,7 @@ class FinancialSummaryService:
             except ValueError:
                 invalid_dates += 1
                 continue
-            if observed.year != today.year:
+            if observed.year != today.year or observed > today:
                 continue
 
             targets = [year]
@@ -216,7 +218,8 @@ class FinancialSummaryService:
 
     def calculate(self, *, today: date | None = None) -> dict[str, Any]:
         today = today or date.today()
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN")
             self._require_tables(conn)
             subscriptions = self._subscription_snapshot(conn)
             month, year, diagnostics = self._mail_snapshot(conn, today)
@@ -260,7 +263,7 @@ class FinancialSummaryService:
             return result
 
         calculated_at = datetime.now().isoformat()
-        with self._connect() as conn:
+        with closing(self._connect(writable=True)) as conn:
             self._require_tables(conn)
             for summary in result["summaries"]:
                 existing = conn.execute(
@@ -309,7 +312,7 @@ class FinancialSummaryService:
         return result
 
     def read(self) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             self._require_tables(conn)
             rows = conn.execute(
                 """
