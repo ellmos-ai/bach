@@ -6635,18 +6635,18 @@ class _GuiHttpChatRequest:
                     task.cancel()
             await asyncio.gather(active, stopped, return_exceptions=True)
 
-    async def _cancel(self, base_url, authorization):
+    async def _cancel(self, client, base_url, authorization):
         # This budget bounds the ACK, not native cleanup or resource ownership.
         try:
-            async with httpx.AsyncClient(timeout=2.0, trust_env=False) as client:
-                response = await asyncio.wait_for(client.request(
-                    "POST", f"{base_url}/chat/request",
-                    headers={"authorization": authorization},
-                    json={"action": "cancel", "binding": self.binding}), timeout=2.0)
-                if response.status_code == 200:
-                    receipt = response.json()
-                    if isinstance(receipt, dict) and receipt.get("ok") is True:
-                        self.cancel_receipt = receipt
+            # The request-scoped pool can send cancel while the model POST is in flight.
+            response = await asyncio.wait_for(client.request(
+                "POST", f"{base_url}/chat/request",
+                headers={"authorization": authorization},
+                json={"action": "cancel", "binding": self.binding}), timeout=2.0)
+            if response.status_code == 200:
+                receipt = response.json()
+                if isinstance(receipt, dict) and receipt.get("ok") is True:
+                    self.cancel_receipt = receipt
         except (httpx.HTTPError, ValueError, asyncio.TimeoutError):
             pass
 
@@ -6701,7 +6701,7 @@ class _GuiHttpChatRequest:
                     raise HTTPException(status_code=503, detail="Private HTTP-Anfragebindung nicht bestätigt")
                 self.binding = binding
                 if self.disconnected.is_set():
-                    await self._cancel(base_url, authorization)
+                    await self._cancel(client, base_url, authorization)
                     raise self._disconnected_error()
                 operation = asyncio.create_task(client.request(
                     "POST", f"{base_url}/chat", headers=private_headers, params=params,
@@ -6716,7 +6716,7 @@ class _GuiHttpChatRequest:
                             raise
                         # Failed I/O does not prove Control/provider completion.
                         # Only the already confirmed ASGI signal authorizes cancel.
-                await self._cancel(base_url, authorization)
+                await self._cancel(client, base_url, authorization)
                 raise self._disconnected_error()
         except (httpx.HTTPError, ValueError) as exc:
             raise HTTPException(status_code=503, detail="Chatdienst nicht erreichbar") from exc
