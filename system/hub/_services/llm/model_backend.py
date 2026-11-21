@@ -2044,6 +2044,10 @@ class CLIBackend(ModelBackend):
 
 def backend_identifier(backend: ModelBackend) -> str:
     """Stable Control-API key for a concrete backend instance."""
+    if getattr(backend, "backend_id", "") == "mlx-qwen":
+        from hub._services.llm.ocean_mlx_backend import OceanMLXBackend
+        if isinstance(backend, OceanMLXBackend):
+            return "mlx-qwen"
     if isinstance(backend, LMStudioBackend):
         return "lmstudio"
     if isinstance(backend, OpenRouterBackend):
@@ -2077,6 +2081,11 @@ def create_backend(config: dict) -> ModelBackend:
     """
     backend_type = config.get("type", "ollama").lower()
 
+    if backend_type == "mlx-qwen":
+        from hub._services.llm.ocean_mlx_backend import MODEL, OceanMLXBackend
+        return OceanMLXBackend(model_store=config["model_store"], default_model=config.get("default_model", MODEL),
+                               num_ctx=config.get("num_ctx", 4096), max_new_tokens=config.get("max_new_tokens", 256),
+                               timeout_seconds=config.get("timeout_seconds", 600))
     if backend_type == "ollama":
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
