@@ -1219,14 +1219,19 @@ def test_simultaneous_http_disconnect_and_control_transport_error(monkeypatch, c
                 await bridge.watch()
             raise httpx.ReadError("isolated Control transport failure", request=request)
         real_client = httpx.AsyncClient
-        monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(
-            transport=httpx.MockTransport(upstream), **kw))
+        clients = []
+        def make_client(**kwargs):
+            client = real_client(transport=httpx.MockTransport(upstream), **kwargs)
+            clients.append(client)
+            return client
+        monkeypatch.setattr(httpx, "AsyncClient", make_client)
         monkeypatch.setattr(server, "_chat_control_base_url", lambda: "http://control.invalid/api")
         monkeypatch.setattr(server, "get_control_api_auth_header", lambda: "Bearer internal-only")
         with pytest.raises(server.HTTPException) as error:
             await bridge.post({"prompt": "test", "chat_id": "gui-web"})
         assert error.value.status_code == (499 if confirmed_disconnect else 503)
         assert cancels == ([{"action": "cancel", "binding": binding}] if confirmed_disconnect else [])
+        assert len(clients) == 1 and clients[0].is_closed
         if confirmed_disconnect:
             assert error.value.detail["cleanup_complete"] is False
     asyncio.run(scenario())
