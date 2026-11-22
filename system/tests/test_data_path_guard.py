@@ -30,6 +30,8 @@ LEAKED_EXAMPLES = [
     "system/staging/1672-onesync-deschedule/backup/onedrive_pinner.py.bak",
     "system/gui/server.py.bak.20261001",
     "TO-DECIDE-USER.txt",
+    "exports2/db_dump.sql",
+    "system/data/telegram_dump",
     "system/.pytest_tmp/run1/out.txt",
 ]
 
@@ -42,6 +44,10 @@ LEGIT_TRACKED = [
     "system/logs/daily/2026-02-21.md",
     "system/tools/inbox_watcher.py",
     "system/docs/help/inbox_en.txt",
+    # Code with "dump" in its name is not data (ext-merge note on #770).
+    "system/hub/json_dump.py",
+    "system/tools/dump_helpers.ts",
+    "docs/how-to-dump.md",
 ]
 
 

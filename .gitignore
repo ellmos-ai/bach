@@ -413,4 +413,9 @@ desktop-installers/
 /system/scripts/out*.txt
 *dump*.txt
 *dump*.json
+*dump*.jsonl
+*dump*.sql
+*dump*.csv
+*dump*.log
+*dump
 /system/C:*
