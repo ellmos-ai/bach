@@ -389,3 +389,6 @@ LOCK*.guard
 .MODULES/.CONTROL/
 
 desktop-installers/
+
+# Abo-CSV-Export mit Nutzerdaten (bach abo export)
+/system/data/abo_export.csv

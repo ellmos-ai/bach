@@ -27,6 +27,18 @@ from ._services.alltag_import import (
 
 
 from hub._services.ocean_stack_bridge import deprecated_legacy_bach
+
+
+def _norm(text) -> str:
+    return "".join(ch for ch in str(text or "").casefold() if ch.isalnum())
+
+
+def _looks_like_known(row: dict, known: list) -> bool:
+    """Gleicher Anbieter (normalisiert) oder Anbieter steckt in einem gespeicherten Namen."""
+    provider = _norm(row["anbieter"])
+    if len(provider) < 3:
+        return False
+    return any(provider == a or provider in n or (len(a) >= 3 and a in provider) for n, a in known)
 @deprecated_legacy_bach("accounts-core")
 class AboHandler(BaseHandler):
     """Handler fuer Abo-Operationen (Expert Agent)"""
@@ -129,6 +141,11 @@ class AboHandler(BaseHandler):
         try:
             created = 0
             updated = 0
+            maybe_duplicates = []
+            known = [
+                (_norm(n), _norm(a))
+                for n, a in conn.execute("SELECT name, anbieter FROM abo_subscriptions")
+            ]
             for row in rows:
                 existing = conn.execute(
                     """
@@ -145,7 +162,8 @@ class AboHandler(BaseHandler):
                             """
                             UPDATE abo_subscriptions
                             SET kategorie = COALESCE(?, kategorie),
-                                betrag_monatlich = ?, zahlungsintervall = ?,
+                                betrag_monatlich = COALESCE(?, betrag_monatlich),
+                                zahlungsintervall = ?,
                                 kuendigungslink = ?, erkannt_am = ?,
                                 bestaetigt = ?, aktiv = ?, updated_at = ?
                             WHERE id = ?
@@ -159,6 +177,8 @@ class AboHandler(BaseHandler):
                         )
                 else:
                     created += 1
+                    if _looks_like_known(row, known):
+                        maybe_duplicates.append(f"{row['anbieter']} / {row['name']}")
                     if not dry_run:
                         conn.execute(
                             """
@@ -179,10 +199,17 @@ class AboHandler(BaseHandler):
             if not dry_run:
                 conn.commit()
             prefix = "[DRY-RUN]" if dry_run else "[OK]"
-            return True, (
+            msg = (
                 f"{prefix} AboTracker-Import: {created} neu, {updated} aktualisiert; "
                 "keine Fälligkeit aus Zahlungsintervall abgeleitet."
             )
+            if maybe_duplicates:
+                msg += (
+                    f"\n[WARN] {len(maybe_duplicates)} neue Einträge haben einen Anbieter, der schon "
+                    "unter anderem Namen gespeichert ist (mögliche Dubletten, bitte prüfen):\n  "
+                    + "\n  ".join(maybe_duplicates)
+                )
+            return True, msg
         except sqlite3.Error as exc:
             conn.rollback()
             return False, f"[ERROR] AboTracker-Import fehlgeschlagen: {exc}"
@@ -206,21 +233,24 @@ class AboHandler(BaseHandler):
                 if not isinstance(model, dict):
                     raise AlltagImportError(f"Provider {provider_name!r}: Modell ist kein Objekt.")
                 model_name = str(model.get("name") or provider_name).strip()
+                raw_monthly = model.get("price_per_month")
                 try:
-                    monthly = float(model.get("price_per_month") or 0)
+                    # Fehlt der Betrag, bleibt er unbekannt (NULL) statt 0 EUR.
+                    monthly = None if raw_monthly in (None, "") else float(raw_monthly)
                     status_level = int(model.get("status_level") or 0)
                 except (TypeError, ValueError) as exc:
                     raise AlltagImportError(
                         f"Provider {provider_name!r}, Modell {model_name!r}: ungültige Zahl."
                     ) from exc
-                if monthly < 0 or status_level not in {0, 1, 2}:
+                if (monthly is not None and monthly < 0) or status_level not in {0, 1, 2}:
                     raise AlltagImportError(
                         f"Provider {provider_name!r}, Modell {model_name!r}: Werte außerhalb des Vertrags."
                     )
+                # Wie AboTracker selbst: aktiv ist, was bezahlt wird (oder manuell
+                # aktiv gesetzt). "likely" allein ist eine Vermutung, kein aktives Abo.
                 active = bool(
                     model.get("is_currently_paid")
                     or model.get("override_active")
-                    or status_level > 0
                 )
                 confirmed = bool(
                     status_level >= 2
@@ -235,7 +265,7 @@ class AboHandler(BaseHandler):
                     "name": model_name,
                     "anbieter": provider_name,
                     "kategorie": provider.get("category"),
-                    "betrag_monatlich": round(monthly, 2),
+                    "betrag_monatlich": None if monthly is None else round(monthly, 2),
                     "zahlungsintervall": "monatlich" if interval == "monthly" else "jährlich",
                     "kuendigungslink": provider.get("cancellation_url"),
                     "erkannt_am": provider.get("last_payment_date") or exported_at,
@@ -633,7 +663,9 @@ class AboHandler(BaseHandler):
             with open(csv_path, 'w', encoding='utf-8') as f:
                 f.write("Anbieter;Kategorie;Betrag_Monatlich;Intervall;Kuendigungslink;Bestaetigt\n")
                 for a in abos:
-                    f.write(f"{a['anbieter']};{a['kategorie'] or ''};{a['betrag_monatlich'] or 0:.2f};{a['zahlungsintervall'] or ''};{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n")
+                    # Unbekannter Betrag bleibt leer, nicht 0.00.
+                    betrag = "" if a['betrag_monatlich'] is None else f"{a['betrag_monatlich']:.2f}"
+                    f.write(f"{a['anbieter']};{a['kategorie'] or ''};{betrag};{a['zahlungsintervall'] or ''};{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n")
 
             return (True, f"[OK] Export erstellt: {csv_path}")
 

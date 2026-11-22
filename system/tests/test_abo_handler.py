@@ -214,6 +214,72 @@ class TestAboTrackerImport:
         assert not ok
         assert "Falsche Schema-Version" in msg
 
+    @staticmethod
+    def _write(tmp_path, payload):
+        source = tmp_path / "abos.json"
+        source.write_text(json.dumps(payload), encoding="utf-8")
+        return source
+
+    def test_missing_amount_stays_unknown_and_update_keeps_known_amount(self, abo_env, tmp_path):
+        handler, _, db_path = abo_env
+        handler.handle("import", [str(self._write(tmp_path, self._payload()))])
+        payload = self._payload()
+        payload["providers"][0]["models"][0]["price_per_month"] = None
+        payload["providers"][0]["models"].append(
+            {"name": "Extra", "billing_cycle": "monthly", "status_level": 2, "is_currently_paid": True}
+        )
+        ok, msg = handler.handle("import", [str(self._write(tmp_path, payload))])
+        assert ok and "1 neu" in msg and "1 aktualisiert" in msg
+        conn = sqlite3.connect(db_path)
+        amounts = dict(conn.execute("SELECT name, betrag_monatlich FROM abo_subscriptions"))
+        conn.close()
+        assert amounts == {"Premium": 12.5, "Extra": None}
+
+    def test_likely_but_unpaid_is_not_active(self, abo_env, tmp_path):
+        handler, _, db_path = abo_env
+        payload = self._payload()
+        model = payload["providers"][0]["models"][0]
+        model.update(status_level=1, status_label="likely", is_currently_paid=False)
+        handler.handle("import", [str(self._write(tmp_path, payload))])
+        conn = sqlite3.connect(db_path)
+        aktiv, bestaetigt = conn.execute("SELECT aktiv, bestaetigt FROM abo_subscriptions").fetchone()
+        conn.close()
+        assert (aktiv, bestaetigt) == (0, 0)
+
+    def test_warns_on_same_provider_with_other_name(self, abo_env, tmp_path):
+        handler, _, db_path = abo_env
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO abo_subscriptions (name, anbieter, betrag_monatlich, aktiv) "
+            "VALUES ('Streamco Abo', 'STREAM-CO GmbH', 12.5, 1)"
+        )
+        conn.commit()
+        conn.close()
+        ok, msg = handler.handle("import", [str(self._write(tmp_path, self._payload()))])
+        assert ok and "1 neu" in msg
+        assert "[WARN] 1 neue" in msg and "StreamCo / Premium" in msg
+
+    def test_no_warning_for_unrelated_provider(self, abo_env, tmp_path):
+        handler, _, db_path = abo_env
+        conn = sqlite3.connect(db_path)
+        conn.execute("INSERT INTO abo_subscriptions (name, anbieter, aktiv) VALUES ('Cloud', 'Wolke AG', 1)")
+        conn.commit()
+        conn.close()
+        ok, msg = handler.handle("import", [str(self._write(tmp_path, self._payload()))])
+        assert ok and "[WARN]" not in msg
+
+    def test_export_leaves_unknown_amount_empty(self, abo_env):
+        handler, base, db_path = abo_env
+        conn = sqlite3.connect(db_path)
+        conn.execute("INSERT INTO abo_subscriptions (name, anbieter, betrag_monatlich, aktiv) VALUES ('A', 'Alpha', NULL, 1)")
+        conn.execute("INSERT INTO abo_subscriptions (name, anbieter, betrag_monatlich, aktiv) VALUES ('B', 'Beta', 4.5, 1)")
+        conn.commit()
+        conn.close()
+        ok, _msg = handler.handle("export", [])
+        assert ok
+        lines = (base / "data" / "abo_export.csv").read_text(encoding="utf-8").splitlines()
+        assert "Alpha;;;" in lines[1] and "Beta;;4.50;" in lines[2]
+
     def test_schedule_import_upserts_active_job(self, abo_env, tmp_path):
         handler, _, db_path = abo_env
         source = tmp_path / "abos.json"
