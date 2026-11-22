@@ -48,6 +48,7 @@ Erstellt: 2026-02-01
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -57,6 +58,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from time import monotonic
 from typing import Dict, List, Optional, Tuple
 import secrets
 
@@ -190,6 +192,13 @@ def _template_path() -> Path:
     """Vorlage: Umgebungsvariable FOERDERBERICHT_TEMPLATE (private Bindung) vor Standardpfad."""
     override = os.environ.get("FOERDERBERICHT_TEMPLATE", "").strip()
     return Path(override) if override else TEMPLATE_PATH
+
+
+def _generator_path() -> Path:
+    override = os.environ.get("FOERDERBERICHT_GENERATOR", "").strip()
+    return Path(override) if override else (
+        BACH_BASE / "system" / "agents" / "_experts" / "report_generator" / "generator.py"
+    )
 
 
 def _report_text(value) -> str:
@@ -578,6 +587,9 @@ class WorkflowSession:
     warnings: List[str] = field(default_factory=list)
     created: str = field(default_factory=lambda: datetime.now().isoformat())
     anonymized: bool = False  # data_ano/ in dieser Session mit diesem Profil erzeugt
+    workspace: Optional[tempfile.TemporaryDirectory] = field(default=None, repr=False)
+    owner_device_id: Optional[int] = field(default=None, repr=False)
+    last_activity: float = field(default_factory=monotonic, repr=False)
 
     def to_dict(self) -> dict:
         """Serialisiert Session fuer API-Response."""
@@ -690,6 +702,8 @@ class ReportWorkflowService:
         service.cleanup(session)
     """
 
+    WEB_SESSION_IDLE_SECONDS = 2 * 60 * 60
+
     def __init__(self, base_path: Optional[Path] = None):
         """
         Args:
@@ -708,10 +722,7 @@ class ReportWorkflowService:
         """
         try:
             import importlib.util
-            generator_path = (
-                BACH_BASE / "system" / "agents" / "_experts"
-                / "report_generator" / "generator.py"
-            )
+            generator_path = _generator_path()
             spec = importlib.util.spec_from_file_location(
                 "report_generator_ref", str(generator_path)
             )
@@ -778,21 +789,57 @@ Interpersonelle Interaktionen:
     # Schritt 1: Session starten
     # ─────────────────────────────────────────────────────────────
 
-    def start_session(self) -> WorkflowSession:
+    def start_session(self, *, isolate_files: bool = False) -> WorkflowSession:
         """
         Startet eine neue Workflow-Session.
+        isolate_files kapselt importierte Akten und Zwischenprodukte für Web-Sitzungen.
 
         Returns:
             WorkflowSession mit eindeutiger ID
         """
         session_id = f"WF_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}"
         session = WorkflowSession(session_id=session_id)
+        if isolate_files:
+            session.workspace = tempfile.TemporaryDirectory(prefix="bach-report-")
+            for name in ("data_roh", "data_ano"):
+                (Path(session.workspace.name) / name).mkdir()
         self._sessions[session_id] = session
         return session
+
+    def _working_dir(self, session: WorkflowSession, name: str) -> Path:
+        base = Path(session.workspace.name) if session.workspace else self.base_path
+        return base / name
+
+    def _output_dir(self, session: WorkflowSession) -> Path:
+        base = self.base_path / "output_berichte"
+        return base / session.session_id if session.workspace else base
 
     def get_session(self, session_id: str) -> Optional[WorkflowSession]:
         """Holt eine bestehende Session."""
         return self._sessions.get(session_id)
+
+    def get_web_session(
+        self, session_id: str, device_id: Optional[int], *, closing: bool = False
+    ) -> Optional[WorkflowSession]:
+        session = self.get_session(session_id)
+        if device_id is None or not session or not session.workspace or session.owner_device_id != device_id:
+            return None
+        if closing:
+            return session
+        now = monotonic()
+        if now - session.last_activity >= self.WEB_SESSION_IDLE_SECONDS:
+            return None
+        session.last_activity = now
+        return session
+
+    def reap_web_sessions(self, *, closing: bool = False) -> None:
+        now = monotonic()
+        for session in list(self._sessions.values()):
+            if session.workspace and (closing or now - session.last_activity >= self.WEB_SESSION_IDLE_SECONDS):
+                try:
+                    self.cleanup(session)
+                except OSError as exc:
+                    logging.getLogger(__name__).warning("BACH report workspace cleanup failed: %s", type(exc).__name__)
 
     # ─────────────────────────────────────────────────────────────
     # Schritt 2: Dateien importieren
@@ -822,10 +869,8 @@ Interpersonelle Interaktionen:
             session.profile.document_scanned = False
         session.bundle = None
         session.anonymized = False
-        data_dir = self.base_path / "data_roh"
+        data_dir = self._working_dir(session, "data_roh")
         data_dir.mkdir(parents=True, exist_ok=True)
-
-        # HINWEIS: data_roh/ wird manuell vom Benutzer verwaltet - kein auto-cleanup
 
         # Dateien kopieren
         imported = 0
@@ -1213,8 +1258,13 @@ Interpersonelle Interaktionen:
         Auswahl wie anonymize_to_bundles)."""
         require_cloud_ner()
         geburtsdatum = require_birth_date(geburtsdatum)
+        if session.workspace and not session.input_files:
+            raise PromptPrivacyError(
+                "Zuerst die Akte fuer diesen Fall uebernehmen. Es wurde nichts gesendet.",
+                code="document_scan_missing",
+            )
         return self.create_temp_profile(
-            session, client_name, geburtsdatum, scan_folder=self.base_path / "data_roh", **kwargs
+            session, client_name, geburtsdatum, scan_folder=self._working_dir(session, "data_roh"), **kwargs
         )
 
     def require_cloud_session(self, session: WorkflowSession) -> None:
@@ -1314,8 +1364,8 @@ Interpersonelle Interaktionen:
             session.status = "error"
             return CollectorResult()
 
-        data_dir = self.base_path / "data_roh"
-        ano_dir = self.base_path / "data_ano"
+        data_dir = self._working_dir(session, "data_roh")
+        ano_dir = self._working_dir(session, "data_ano")
 
         # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
         ensure_disjoint_roots(data_dir, ano_dir)
@@ -1392,7 +1442,7 @@ Interpersonelle Interaktionen:
             session.status = "error"
             return CollectorResult()
 
-        ano_dir = self.base_path / "data_ano"
+        ano_dir = self._working_dir(session, "data_ano")
 
         # Quelle und Ziel duerfen sich nicht ueberlappen (sonst loescht das Leeren die Originale)
         ensure_disjoint_roots(Path(source_folder), ano_dir)
@@ -1540,10 +1590,10 @@ Interpersonelle Interaktionen:
         """
         if from_data:
             # Direkt aus data_roh/ scannen (wenn keine Anonymisierung zu data_ano/ erfolgt)
-            scan_dir = self.base_path / "data_roh"
+            scan_dir = self._working_dir(session, "data_roh")
         else:
             # Aus data_ano/ (nach anonymize_to_bundles)
-            scan_dir = self.base_path / "data_ano"
+            scan_dir = self._working_dir(session, "data_ano")
 
         collector = DocumentCollector()
         result = collector.scan_folder(str(scan_dir))
@@ -1600,7 +1650,7 @@ Interpersonelle Interaktionen:
 
         # Bundle extrahieren falls noch nicht geschehen
         # Pruefe ob data_ano/ Dateien hat, sonst aus data_roh/ lesen
-        ano_dir = self.base_path / "data_ano"
+        ano_dir = self._working_dir(session, "data_ano")
         has_ano = ano_dir.exists() and any(ano_dir.iterdir())
 
         if not session.bundle:
@@ -2069,7 +2119,11 @@ JSON:
         else:
             original_name = session.profile.tarnname if session.profile else "Klient"
 
-        generator_path = BACH_BASE / "system" / "agents" / "_experts" / "report_generator" / "generator.py"
+        generator_path = _generator_path()
+        if os.environ.get("FOERDERBERICHT_GENERATOR", "").strip() and not generator_path.is_file():
+            session.error_message = "Generator nicht gefunden. FOERDERBERICHT_GENERATOR prüfen."
+            session.status = "error"
+            return None
         template_path = _template_path()
         if generator_path.is_file() and template_path.is_file():
             try:
@@ -2089,22 +2143,31 @@ JSON:
                 safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
                 timestamp = datetime.now().strftime("%Y%m%d")
                 output_name = f"Foerderbericht_{safe_name}_{timestamp}.docx"
-                output_path = self.base_path / "output_berichte" / output_name
+                output_dir = self._output_dir(session)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / output_name
 
-                # Generator nutzen
-                result = fill_template(
-                    template_path=str(template_path),
-                    report_data=json_data,
-                    output_path=str(output_path)
-                )
+                from docx import Document
 
-                if result.success:
-                    session.output_path = output_path
-                    session.status = "completed"
-                    return output_path
-                session.error_message = f"Generator-Fehler: {'; '.join(result.errors)}"
-                session.status = "error"
-                return None
+                with tempfile.TemporaryDirectory(prefix=".report-", dir=output_dir) as staging:
+                    rendered = Path(staging) / output_name
+                    result = fill_template(
+                        template_path=str(template_path),
+                        report_data=json_data,
+                        output_path=str(rendered),
+                    )
+                    if not result.success:
+                        session.error_message = f"Generator-Fehler: {'; '.join(result.errors)}"
+                        session.status = "error"
+                        return None
+                    if rendered.is_symlink() or not rendered.is_file():
+                        raise OSError("Generator hat keine Arbeitsdatei geliefert.")
+                    Document(rendered)
+                    rendered.replace(output_path)
+
+                session.output_path = output_path
+                session.status = "completed"
+                return output_path
             except Exception as exc:
                 # Vorhandener Generator, der scheitert: Fehler, kein stiller Ersatzbericht.
                 print("[FEHLER] fill_template Exception")
@@ -2265,11 +2328,19 @@ JSON:
         safe_name = "".join(c for c in original_name if c.isalnum() or c in " -_").strip()
         timestamp = datetime.now().strftime("%Y%m%d")
         output_name = f"Foerderbericht_{safe_name}_{timestamp}.docx"
-        output_dir = self.base_path / "output_berichte"
+        output_dir = self._output_dir(session)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / output_name
 
-        doc.save(str(output_path))
+        try:
+            with tempfile.TemporaryDirectory(prefix=".report-", dir=output_dir) as staging:
+                rendered = Path(staging) / output_name
+                doc.save(str(rendered))
+                rendered.replace(output_path)
+        except OSError:
+            session.error_message = "Der Bericht konnte nicht gespeichert werden."
+            session.status = "error"
+            return None
 
         session.output_path = output_path
         session.status = "completed"
@@ -2592,23 +2663,24 @@ JSON:
 
     def cleanup(self, session: WorkflowSession, keep_output: bool = True):
         """
-        Raeumt temporaere Daten auf (NICHT data_roh/ - wird manuell verwaltet).
+        Räumt den Arbeitsordner der Web-Sitzung oder die Zwischenprodukte des lokalen Ablaufs auf.
 
         Args:
             session: Aktive Session
             keep_output: Output-Ordner behalten (Default: True)
         """
-        # HINWEIS: data_roh/ wird NICHT automatisch geleert - Benutzer verwaltet das selbst
-
-        # data_ano/ leeren
-        ano_dir = self.base_path / "data_ano"
-        if ano_dir.exists():
-            for f in ano_dir.iterdir():
-                try:
-                    if f.is_file():
-                        f.unlink()
-                except PermissionError:
-                    pass
+        if session.workspace:
+            session.workspace.cleanup()
+        else:
+            # Legacy-Aufrufer verwalten ihren Rohdatenordner selbst.
+            ano_dir = self._working_dir(session, "data_ano")
+            if ano_dir.exists():
+                for f in ano_dir.iterdir():
+                    try:
+                        if f.is_file():
+                            f.unlink()
+                    except PermissionError:
+                        pass
 
         # Profil-Cleanup
         if session.profile:

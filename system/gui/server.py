@@ -1225,10 +1225,6 @@ async def lifespan(app: FastAPI):
 
         from gui.sync_service import on_file_change
 
-        import asyncio
-
-
-
         if WATCHDOG_AVAILABLE:
 
             # Event-Loop für threadsafe broadcast
@@ -1297,7 +1293,17 @@ async def lifespan(app: FastAPI):
 
 
 
-    yield
+    report_cleanup = asyncio.create_task(_reap_idle_report_sessions())
+    try:
+        yield
+    finally:
+        report_cleanup.cancel()
+        try:
+            await report_cleanup
+        except asyncio.CancelledError:
+            pass
+        if _report_workflow_service is not None:
+            _report_workflow_service.reap_web_sessions(closing=True)
 
 
 
@@ -16796,6 +16802,22 @@ async def upload_anon_file(file: Request):
 
 # Global service instance
 _report_workflow_service = None
+_REPORT_CLEANUP_INTERVAL_SECONDS = 60
+_REPORT_SESSION_UNAVAILABLE = {
+    "success": False,
+    "error": "Sitzung nicht verfügbar. Mit „Neuer Fall“ eine Sitzung starten und die Akte erneut übernehmen.",
+}
+
+
+async def _reap_idle_report_sessions():
+    while True:
+        await asyncio.sleep(_REPORT_CLEANUP_INTERVAL_SECONDS)
+        if _report_workflow_service is not None:
+            _report_workflow_service.reap_web_sessions()
+
+
+def _report_session(service, session_id: str, request: Request):
+    return service.get_web_session(session_id, _report_device_id(request))
 
 def get_report_workflow_service():
     """Lazy-load Report Workflow Service."""
@@ -16819,7 +16841,7 @@ def _report_error_response(exc: Exception) -> dict:
 
 
 @app.get("/api/report/readiness")
-async def report_readiness(session_id: Optional[str] = None):
+async def report_readiness(request: Request, session_id: Optional[str] = None):
     """Ob der Cloud-Weg laufen darf (Namenserkennung bereit); sonst Grund maschinenlesbar, ohne Werte.
 
     Mit ?session_id= zusaetzlich die Session: Profil, lesbares Geburtsdatum, Akten-Scan nach dem
@@ -16828,9 +16850,9 @@ async def report_readiness(session_id: Optional[str] = None):
         from hub._services.document.report_workflow_service import PromptPrivacyError, require_cloud_ner
         session = None
         if session_id is not None:
-            session = get_report_workflow_service().get_session(session_id)
+            session = _report_session(get_report_workflow_service(), session_id, request)
             if not session:
-                return {"success": False, "error": "Session nicht gefunden"}
+                return _REPORT_SESSION_UNAVAILABLE
         try:
             require_cloud_ner()
             if session is not None:
@@ -16842,15 +16864,26 @@ async def report_readiness(session_id: Optional[str] = None):
         return {"success": False, "error": public_error_message()}
 
 
+def _report_device_id(request: Request) -> Optional[int]:
+    device = getattr(request.state, "device", None)
+    value = device.get("id") if isinstance(device, dict) else None
+    return value if type(value) is int and value > 0 else None
+
+
 @app.post("/api/report/session/start")
-async def start_report_session():
+async def start_report_session(request: Request):
     """Startet eine neue Report-Workflow-Session."""
     try:
+        device_id = _report_device_id(request)
+        if device_id is None:
+            return JSONResponse({"success": False, "error": "Geräteanmeldung erforderlich."}, status_code=401)
         service = get_report_workflow_service()
-        session = service.start_session()
+        session = service.start_session(isolate_files=True)
+        session.owner_device_id = device_id
         return {
             "success": True,
             "session_id": session.session_id,
+            "isolated_workspace": True,
             "status": session.status
         }
     except Exception as e:
@@ -16858,7 +16891,7 @@ async def start_report_session():
 
 
 @app.post("/api/report/session/{session_id}/import")
-async def import_files_to_session(session_id: str, data: dict = Body(...)):
+async def import_files_to_session(session_id: str, request: Request, data: dict = Body(...)):
     """
     Importiert Dateien in eine Session.
 
@@ -16866,9 +16899,9 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            return _REPORT_SESSION_UNAVAILABLE
 
         folder = data.get("folder")
         files = data.get("files", [])
@@ -16899,7 +16932,7 @@ async def import_files_to_session(session_id: str, data: dict = Body(...)):
 
 
 @app.post("/api/report/session/{session_id}/profile")
-async def create_session_profile(session_id: str, data: dict = Body(...)):
+async def create_session_profile(session_id: str, request: Request, data: dict = Body(...)):
     """
     Erstellt das Pseudonymisierungsprofil fuer den Cloud-Weg (wie die Pipeline: Namenserkennung
     Pflicht, Scan der importierten Akte). Ohne spaCy/NER: privacy_block mit error_code.
@@ -16913,9 +16946,9 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            return _REPORT_SESSION_UNAVAILABLE
 
         client_name = data.get("client_name")
         if not client_name:
@@ -16941,7 +16974,7 @@ async def create_session_profile(session_id: str, data: dict = Body(...)):
 
 
 @app.post("/api/report/session/{session_id}/anonymize")
-async def anonymize_session_documents(session_id: str, data: dict = Body(default={})):
+async def anonymize_session_documents(session_id: str, request: Request, data: dict = Body(default={})):
     """
     Anonymisiert die importierten Dokumente.
 
@@ -16949,9 +16982,9 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            return _REPORT_SESSION_UNAVAILABLE
 
         include_extended = data.get("include_extended", False)
         result = service.anonymize_to_bundles(session, include_extended)
@@ -16968,7 +17001,7 @@ async def anonymize_session_documents(session_id: str, data: dict = Body(default
 
 
 @app.post("/api/report/session/{session_id}/prompt")
-async def generate_session_prompt(session_id: str, data: dict = Body(default={})):
+async def generate_session_prompt(session_id: str, request: Request, data: dict = Body(default={})):
     """
     Generiert den Cloud-Prompt (Kopieren in ein Cloud-Modell): nur mit Pseudonymisierungsprofil
     und hinter derselben Datenschutz-Sperre wie die Pipeline; Sperre -> privacy_block + error_code.
@@ -16981,9 +17014,9 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            return _REPORT_SESSION_UNAVAILABLE
 
         berichtszeitraum = data.get("berichtszeitraum", "")
         include_kb = data.get("include_wissensdatenbank", True)
@@ -17007,10 +17040,13 @@ async def generate_session_prompt(session_id: str, data: dict = Body(default={})
         return _report_error_response(e)
 
 
+_REPORT_DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
 @app.post("/api/report/session/{session_id}/generate")
-async def generate_session_report(session_id: str, data: dict = Body(...)):
+async def generate_session_report(session_id: str, request: Request, data: dict = Body(...)):
     """
-    Generiert das Word-Dokument.
+    Generiert das Word-Dokument. Browser können die Datei über den Accept-Header anfordern.
 
     Body: {
         "llm_response": "Der generierte Berichtstext...",
@@ -17019,9 +17055,12 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
+        download = request.headers.get("accept") == _REPORT_DOCX_TYPE
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            if download:
+                return JSONResponse(_REPORT_SESSION_UNAVAILABLE, status_code=404)
+            return _REPORT_SESSION_UNAVAILABLE
 
         llm_response = data.get("llm_response")
         if not llm_response:
@@ -17037,6 +17076,7 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
             detail = str(getattr(session, "error_message", "") or "")
             reason = next((r for prefix, r in (
                 ("Vorlage nicht gefunden", "template_missing"),
+                ("Generator nicht gefunden", "generator_missing"),
                 ("Generator-Fehler", "generator_failed"),
                 ("python-docx", "docx_missing")) if detail.startswith(prefix)), "unknown")
             return {
@@ -17047,6 +17087,12 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
                 "status": session.status,
             }
 
+        if download:
+            # Read before the response starts, while the generated output still belongs to this run.
+            return Response(Path(output_path).read_bytes(), media_type=_REPORT_DOCX_TYPE, headers={
+                "Content-Disposition": 'attachment; filename="Foerderbericht.docx"',
+                "Cache-Control": "private, no-store",
+            })
         return {
             "success": True,
             "output_path": str(output_path),
@@ -17057,7 +17103,7 @@ async def generate_session_report(session_id: str, data: dict = Body(...)):
 
 
 @app.post("/api/report/session/{session_id}/cleanup")
-async def cleanup_session(session_id: str, data: dict = Body(default={})):
+async def cleanup_session(session_id: str, request: Request, data: dict = Body(default={})):
     """
     Räumt alle temporären Session-Daten auf.
 
@@ -17065,9 +17111,10 @@ async def cleanup_session(session_id: str, data: dict = Body(default={})):
     """
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = service.get_web_session(session_id, _report_device_id(request), closing=True)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            # Ein bereits beendeter oder unzugänglicher Fall ist hier ein No-op.
+            return {"success": True}
 
         keep_output = data.get("keep_output", True)
         service.cleanup(session, keep_output)
@@ -17078,13 +17125,13 @@ async def cleanup_session(session_id: str, data: dict = Body(default={})):
 
 
 @app.get("/api/report/session/{session_id}")
-async def get_session_status(session_id: str):
+async def get_session_status(session_id: str, request: Request):
     """Gibt den aktuellen Session-Status zurück."""
     try:
         service = get_report_workflow_service()
-        session = service.get_session(session_id)
+        session = _report_session(service, session_id, request)
         if not session:
-            return {"success": False, "error": "Session nicht gefunden"}
+            return _REPORT_SESSION_UNAVAILABLE
 
         return {"success": True, "session": session.to_dict()}
     except Exception as e:
