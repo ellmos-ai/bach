@@ -72,18 +72,21 @@ class DeliveryEngine:
     """Zentrale Delivery-Engine für BACH"""
 
     def __init__(self, base_path: Path = None):
+        from hub import bach_paths
+
+        filename = "delivery_preferences.json"
+        local_config = None
         if base_path is None:
-            # Auto-detect: Diese Datei liegt in system/hub/_services/delivery/
-            base_path = Path(__file__).parent.parent.parent.parent
+            base_path = bach_paths.SYSTEM_ROOT
+            local_config = bach_paths.LOCAL_BACH_DIR / "config" / filename
 
         self.base_path = base_path
-        self.config_file = base_path / "data" / "config" / "delivery_preferences.json"
+        self.config_file = base_path / "data" / "config" / filename
+        if local_config is not None and local_config.is_file():
+            self.config_file = local_config
+
         self.config = self._load_config()
-        try:
-            from hub.bach_paths import BACH_DB
-            self.db_path = BACH_DB
-        except ImportError:
-            self.db_path = BACH_DB
+        self.db_path = bach_paths.BACH_DB
 
     def _load_config(self) -> dict:
         """Lädt Delivery-Preferences Config"""
@@ -91,9 +94,12 @@ class DeliveryEngine:
             return self._get_default_config()
 
         try:
-            return json.loads(self.config_file.read_text(encoding='utf-8'))
-        except Exception as e:
-            print(f"[WARN] Config-Load fehlgeschlagen: {e}, nutze Defaults")
+            config = json.loads(self.config_file.read_text(encoding='utf-8'))
+            if not isinstance(config, dict):
+                raise ValueError("expected a JSON object")
+            return config
+        except (OSError, ValueError):
+            print("[WARN] Zustellkonfiguration konnte nicht gelesen werden. Standardzustellung wird verwendet.")
             return self._get_default_config()
 
     def _get_default_config(self) -> dict:
