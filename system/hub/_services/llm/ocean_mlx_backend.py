@@ -1,3 +1,4 @@
+# BACH Adapter: ocean_mlx_backend
 # SPDX-License-Identifier: MIT
 """Opt-in text-only Qwen backend over the authenticated Ocean resource host."""
 from __future__ import annotations
