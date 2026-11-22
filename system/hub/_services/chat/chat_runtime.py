@@ -2850,6 +2850,12 @@ class ChatRuntime(_ModuleChatRuntime):
                 raise RuntimeError("Abschlussreserve kann Backend-eigene Werkzeuge nicht begrenzen")
             agent_kwargs = {"agent_operations": self.agent_operations} if self.agent_operations is not None else {}
             return await dispatch_model_call(bound=True, agent_kwargs=agent_kwargs)
+        from hub._services.llm.model_backend import backend_identifier
+
+        if backend_identifier(backend) == "mlx-qwen":
+            kwargs["priority"] = turn_context[1] if turn_context else "foreground"
+            kwargs["check_ready"] = check_binding
+            return await dispatch_model_call()
         if not self._uses_local_compute(backend):
             return await dispatch_model_call()
         selected_model = kwargs.get("model") or backend.get_default_model()

@@ -146,3 +146,21 @@ Die Freigabe erfordert zusätzlich unabhängigen Review, einen belegten Sensor,
 ein aktuelles Peakprofil, kontrollierte Einbindung sämtlicher Modellkonsumenten
 und überprüfte kooperative Compute-Checkpoint-/Resume-Abläufe. Ein paralleler
 CPU-Broker neben einem unbrokered Modell löst die Kapazitätsfrage nicht.
+
+## Optionaler Ocean-MLX-Textpfad
+
+Der Backend-Typ `mlx-qwen` ist für Textgespräche mit dem gepinnten
+`qwen3.8:27b-mlx` vorgesehen. Die Backend-Konfiguration setzt `model_store`
+auf den absoluten lokalen Ollama-Modellspeicher. `num_ctx` entspricht dem
+geprüften Ocean-Ziel. `max_new_tokens` begrenzt die Ausgabe. Die Tokenisierung
+liest die geprüften lokalen Modelldateien und benötigt Transformers 5.15.0
+mit Tokenizers und Jinja-Unterstützung.
+
+`BACH_RESOURCE_BROKER_CONFIG` muss auf den privaten Ocean-Client für dieses
+Ziel zeigen. Der Host weist das Ziel als `backend: "mlx-qwen"` aus. Bei einem
+Kaltstart erwirbt BACH zuerst die Ocean-Ladefreigabe, lädt unter der
+Inferenzsperre und lässt Ocean den Lauf bestätigen. Danach beginnt ein
+separater Inferenz-Turn für die Textanfrage. Der Textpfad unterstützt keine
+Werkzeugaufrufe. Die Aktivierung setzt eine geprüfte Version des
+Ocean-Providers mit den nativen Lade- und Generierungsoperationen sowie ein
+freigegebenes MLX-Ressourcenprofil voraus.
