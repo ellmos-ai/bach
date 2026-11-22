@@ -4,6 +4,8 @@ import importlib
 import json
 import sqlite3
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 
 import httpx
 import pytest
@@ -322,9 +324,52 @@ def test_retry_wait_observes_stop_policy_ttl_and_generation(monkeypatch, interru
         assert writes[-1]["status"] == ("idle" if interruption == "disabled" else "expired")
 
 
-@pytest.mark.parametrize("scenario", ["recover", "connection_recover", "sustained_rate_limit", "stop", "return_denied", "foreign_claim", "quota_after_retry",
+@pytest.fixture
+def loopback_openrouter():
+    servers = []
+
+    def start(retry_after):
+        calls = []
+
+        class Provider(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def do_POST(self):
+                calls.append(httpx.Request("POST", self.path,
+                    content=self.rfile.read(int(self.headers["Content-Length"]))))
+                index = len(calls) - 1
+                failing = index < len(retry_after)
+                payload = {"error": {"message": "PRIVATE_PROVIDER_BODY"}} if failing else {
+                    "choices": [{"message": {"role": "assistant", "content": "Healthy fixture"}}],
+                }
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(504 if failing else 200)
+                if failing and retry_after[index] is not None:
+                    self.send_header("Retry-After", str(retry_after[index]))
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        servers.append((server, thread))
+        return server.server_port, calls
+
+    yield start
+    for server, thread in servers:
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
+
+
+@pytest.mark.parametrize("scenario", ["recover", "connection_recover", "gateway_retry", "gateway_recover",
+    "sustained_rate_limit", "stop", "return_denied", "foreign_claim", "quota_after_retry",
     "unknown_none", "unknown_false", "unknown_true", "unknown_negative", "unknown_string", "unknown_float"])
-def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_path, monkeypatch, scenario):
+def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(
+        tmp_path, monkeypatch, scenario, loopback_openrouter):
     import sqlite3
     from hub._services import task_lease_client as client_module
     from hub._services.task_lease_client import TaskLeaseClient
@@ -333,13 +378,15 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     from system.tests.test_task_lease_client import _init_db
     from hub._services.llm.model_backend import OpenRouterBackend
     connection = scenario == "connection_recover"
-    model = "openrouter/free" if connection else "glm-5.3:cloud"
+    gateway = scenario in {"gateway_retry", "gateway_recover"}
+    openrouter = connection or gateway
+    model = "openrouter/free" if openrouter else "glm-5.3:cloud"
     control = importlib.import_module("hub._services.chat.telegram_chat")
     path = str(tmp_path / "slots.json")
     slots.initialize_slots_config(path)
     monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
     ident = _add_test_worker({"name": "Cloud retry fixture", "type": "continuous"}, path)
-    slots.update_slot(ident, {"backend": "openrouter" if connection else "ollama", "model": model, "enabled": True,
+    slots.update_slot(ident, {"backend": "openrouter" if openrouter else "ollama", "model": model, "enabled": True,
         "mode": "safe", "task_id": 42, "pause_after": 0}, path)
     for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
         monkeypatch.setattr(control, registry, {})
@@ -353,8 +400,14 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     conn.commit()
     client = TaskLeaseClient(conn=conn)
     monkeypatch.setattr(control, "_native_task_client", lambda: client)
-    backend = (OpenRouterBackend(api_key="fixture", default_model=model)
-               if connection else OllamaBackend(default_model=model))
+    calls, fences, waits, inner_waits = [], [], [], []
+    if gateway:
+        delays = (7,) if scenario == "gateway_retry" else (7, None, None, 75)
+        loopback_port, calls = loopback_openrouter(delays)
+    if openrouter:
+        backend = OpenRouterBackend(api_key="fixture", default_model=model)
+    else:
+        backend = OllamaBackend(default_model=model)
     runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
     monkeypatch.setattr(control, "runtime", runtime)
     session = ChatSession()
@@ -362,12 +415,11 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
     monkeypatch.setattr(runtime, "get_session", lambda _: session)
     monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *a, **kw: (backend, model))
     real_client = httpx.AsyncClient
-    calls, fences, waits, inner_waits = [], [], [], []
     async def inner_wait(seconds, *, check_active):
         check_active()
         assert client.read(42).leased
         inner_waits.append(seconds)
-    if connection:
+    if openrouter:
         monkeypatch.setattr(runtime, "_wait_model_call_retry", inner_wait)
     def reply(request):
         calls.append(request)
@@ -380,14 +432,24 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             return httpx.Response(200, text=json.dumps({"message": {"content": "Healthy fixture"}, "done": True}) + "\n")
         payload = "monthly usage limit reached" if scenario == "quota_after_retry" and len(calls) > 1 else "rate limit"
         return httpx.Response(429, json={"error": payload + " PRIVATE_PROVIDER_BODY"})
-    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
-        real_client(transport=httpx.MockTransport(reply), **kw))
+    if gateway:
+        class LoopbackTransport(httpx.AsyncHTTPTransport):
+            async def handle_async_request(self, request):
+                assert str(request.url) == "https://openrouter.ai/api/v1/chat/completions"
+                request.url = request.url.copy_with(scheme="http", host="127.0.0.1", port=loopback_port)
+                return await super().handle_async_request(request)
+
+        monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+            real_client(transport=LoopbackTransport(), **kw))
+    else:
+        monkeypatch.setattr(httpx, "AsyncClient", lambda **kw:
+            real_client(transport=httpx.MockTransport(reply), **kw))
     async def process(*a, **kw):
         binding = session.worker_task_binding
         assert binding.task_id == 42 and not binding.closed
         fences.append(binding._ack.fence)
         messages = [{"role": "user", "content": "fixture"}]
-        if connection:
+        if openrouter:
             result = await runtime._chat_with_cloud_call_retry(session, backend, model, messages)
             answer = (FailedAnswer(result["error"], backend_error=result["backend_error"],
                                    reason_code=result["reason_code"])
@@ -424,6 +486,10 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
             assert public["backend_error"]["kind"] == "connection_error"
             assert fences == [1] and inner_waits == [5, 10, 20]
             assert len(calls) == 4
+        elif gateway:
+            assert public["backend_error"]["status_code"] == 504
+            assert fences == [1] and inner_waits == [7, 10, 20]
+            assert len(calls) == 4
         else:
             assert public["backend_error"]["status_code"] == 429
         if (scenario == "stop" or scenario.startswith("unknown_")
@@ -453,14 +519,21 @@ def test_native_cloud_retry_releases_before_wait_and_reclaims_fresh_fence(tmp_pa
         assert all(json.loads(request.content)["model"] == model for request in calls)
         task = dict(conn.execute("SELECT * FROM tasks WHERE id=42").fetchone())
         current = slots.get_slot(ident, path)
-        if scenario in {"recover", "connection_recover"}:
-            assert len(calls) == (5 if connection else 2)
-            assert waits == [60] and fences == [1, 2]
-            if connection:
-                assert inner_waits == [5, 10, 20]
+        if scenario in {"recover", "connection_recover", "gateway_retry", "gateway_recover"}:
+            if gateway:
+                assert all(request.url.path == "/api/v1/chat/completions" for request in calls)
+            if scenario == "gateway_retry":
+                assert len(calls) == 2 and inner_waits == [7]
+                assert waits == [] and fences == [1]
+            else:
+                assert len(calls) == (5 if openrouter else 2)
+                assert waits == ([75] if gateway else [60]) and fences == [1, 2]
+            if connection or scenario == "gateway_recover":
+                assert inner_waits == ([7, 10, 20] if gateway else [5, 10, 20])
                 events = slots.get_activity_history(path=path)
+                reason = "temporary_gateway_timeout" if gateway else "temporary_connection_error"
                 assert any(e.get("event") == "assignment_ended"
-                           and e.get("reason") == "temporary_connection_error" for e in events)
+                           and e.get("reason") == reason for e in events)
             assert task["status"] == "review" and task["claim_salt_ref"] is None
             assert current.get("backend_error") is None
             assert execution.task_result_bindings[42].submitted_result["accepted"] is False
