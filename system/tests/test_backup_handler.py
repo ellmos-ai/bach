@@ -333,17 +333,130 @@ class TestBackupManager:
         from gui.api import headless
 
         db_path = tmp_path / "bach.db"
-        db_path.write_bytes(b"private runtime data")
+        live = sqlite3.connect(str(db_path))  # offen: Zeile nur im WAL
+        live.execute("PRAGMA journal_mode=WAL")
+        live.execute("CREATE TABLE t (x TEXT)")
+        live.execute("INSERT INTO t VALUES ('im-wal')")
+        live.commit()
         backup_root = tmp_path / "backups"
 
         monkeypatch.setattr(headless, "BACH_DB", str(db_path))
         monkeypatch.setattr(headless, "BACKUPS_DIR", backup_root)
 
         result = asyncio.run(headless.create_backup(None))
+        live.close()
 
         backup_path = Path(result["backup"])
         assert backup_path.parent == backup_root / "api"
-        assert backup_path.read_bytes() == b"private runtime data"
+        copy = sqlite3.connect(str(backup_path))
+        try:
+            assert copy.execute("SELECT x FROM t").fetchone()[0] == "im-wal"
+        finally:
+            copy.close()
+
+    def test_simple_backup_fallback_contains_wal_consistent_db(self, handler, backup_env):
+        live = sqlite3.connect(str(backup_env / "data" / "bach.db"))
+        live.execute("PRAGMA journal_mode=WAL")
+        live.execute("CREATE TABLE t (x TEXT)")
+        live.execute("INSERT INTO t VALUES ('im-wal')")
+        live.commit()
+        with patch.object(handler, '_get_backup_manager', return_value=None):
+            ok, _ = handler.handle("create", [], dry_run=False)
+        live.close()
+        assert ok is True
+        zip_path = next(handler.backups_dir.glob("*.zip"))
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extract("data/bach.db", backup_env / "x")
+        copy = sqlite3.connect(str(backup_env / "x" / "data" / "bach.db"))
+        try:
+            assert copy.execute("SELECT x FROM t").fetchone()[0] == "im-wal"
+        finally:
+            copy.close()
+
+
+def _make_db(path, title):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT)")
+    conn.execute("INSERT INTO tasks (title) VALUES (?)", (title,))
+    conn.commit()
+    conn.close()
+
+
+def _titles(path):
+    conn = sqlite3.connect(str(path))
+    try:
+        return [r[0] for r in conn.execute("SELECT title FROM tasks")]
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def bm(tmp_path, monkeypatch):
+    """BackupManager mit isolierten Pfaden; DB ausserhalb des Repos."""
+    from tools import backup_manager
+
+    db_path = tmp_path / "home" / ".bach" / "bach.db"
+    _make_db(db_path, "alt")
+    monkeypatch.setattr(backup_manager, "DB_PATH", db_path)
+    monkeypatch.setattr(backup_manager, "BACKUPS_DIR", tmp_path / "backups")
+    monkeypatch.setattr(backup_manager, "SNAPSHOTS_DIR", tmp_path / "snap")
+    monkeypatch.setattr(backup_manager, "BACH_DIR", tmp_path / "bach_dir")
+    for n in ("MEMORY_DIR", "LOGS_DIR", "USER_DIR"):
+        monkeypatch.setattr(backup_manager, n, tmp_path / ("no_" + n))
+    return backup_manager.BackupManager(), db_path
+
+
+class TestRestoreDbFile:
+    def test_restore_replaces_db_and_keeps_safety_copy(self, bm):
+        manager, db_path = bm
+        ok, zip_str = manager.create_backup()
+        assert ok
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("INSERT INTO tasks (title) VALUES ('neu')")
+        conn.commit()
+        conn.close()
+        # veraltete Sidecars der laufenden DB duerfen den Restore nicht verfaelschen
+        db_path.with_name("bach.db-wal").write_bytes(b"stale")
+        db_path.with_name("bach.db-shm").write_bytes(b"stale")
+
+        ok, _ = manager.restore_backup(Path(zip_str).stem, force=True, auto_backup=False)
+
+        assert ok
+        assert _titles(db_path) == ["alt"]
+        assert not db_path.with_name("bach.db-wal").exists()
+        safety = list(db_path.parent.glob("bach.db.pre-restore-*.bak"))
+        assert len(safety) == 1 and _titles(safety[0]) == ["alt", "neu"]
+        assert not list(db_path.parent.glob(".restore_*"))
+
+    def test_restore_corrupt_db_in_zip_is_fail_closed(self, bm, tmp_path):
+        manager, db_path = bm
+        bad = manager.backups_dir / "userdata_bad.zip"
+        with zipfile.ZipFile(bad, "w") as zf:
+            zf.writestr("data/bach.db", b"das ist keine sqlite datei" * 100)
+            zf.writestr("memory/x.txt", "darf nicht geschrieben werden")
+
+        ok, _ = manager.restore_backup("userdata_bad", force=True, auto_backup=False)
+
+        assert not ok
+        assert _titles(db_path) == ["alt"]
+        assert not (tmp_path / "bach_dir" / "memory" / "x.txt").exists()
+        assert not list(db_path.parent.glob(".restore_*"))
+        assert not list(db_path.parent.glob("*.pre-restore-*"))
+
+    def test_restore_legacy_json_only_zip_keeps_old_behaviour(self, bm, tmp_path):
+        import json
+        manager, db_path = bm
+        legacy = manager.backups_dir / "userdata_legacy.zip"
+        with zipfile.ZipFile(legacy, "w") as zf:
+            zf.writestr("db_export.json", json.dumps(
+                {"tasks": [{"id": 7, "title": "aus-json"}]}))
+
+        ok, _ = manager.restore_backup("userdata_legacy", force=True, auto_backup=False)
+
+        assert ok
+        assert _titles(db_path) == ["aus-json"]  # bisheriges Verhalten: Tabelle ersetzt
 
 
 # ═══════════════════════════════════════════════════════════════

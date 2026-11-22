@@ -77,6 +77,7 @@ sys.path.insert(0, str(BACH_ROOT))
 # gebauten Pfad zeigte still auf die veraltete Repo-/Cloud-Kopie
 # (test_db_path_central, T-20260901-202368596). sys.path steht oben bereits.
 from hub.bach_paths import BACH_DB as _PATHS_DB, BACKUPS_DIR
+from hub.db_snapshot import snapshot_db
 from hub.task_audit import apply_task_field_changes, GateReopenBlocked, normalize_task_tags
 BACH_DB = str(_PATHS_DB)
 
@@ -518,7 +519,7 @@ async def create_backup(_=Depends(verify_auth)):
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / f"bach_api_{now}.db"
     try:
-        shutil.copy2(BACH_DB, str(backup_path))
+        snapshot_db(BACH_DB, backup_path)  # Backup-API + integrity_check, kein copy2
         size_kb = backup_path.stat().st_size / 1024
         return {"backup": str(backup_path), "size_kb": round(size_kb)}
     except Exception as e:

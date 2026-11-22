@@ -14,6 +14,7 @@ from datetime import datetime
 from .base import BaseHandler
 from .bach_paths import BACKUPS_DIR
 from .lang import t
+from .db_snapshot import snapshot_db
 
 
 from hub._services.ocean_stack_bridge import deprecated_legacy_bach
@@ -91,22 +92,30 @@ class BackupHandler(BaseHandler):
         
         results = [f"{t('erstelle_backup', default='Erstelle Backup')}: {zip_name}"]
         
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for dir_name in user_dirs:
-                dir_path = self.base_path / dir_name
-                if dir_path.exists():
-                    for item in dir_path.rglob("*"):
-                        if item.is_file():
-                            rel_path = item.relative_to(self.base_path)
-                            zf.write(item, rel_path)
-                            results.append(f"  + {rel_path}")
-            
-            # DB sichern
-            db_path = self._canonical_db
-            if db_path.exists():
-                zf.write(db_path, "data/bach.db")
-                results.append("  + data/bach.db")
-        
+        # DB zuerst: scheitert der Snapshot, entsteht gar kein (DB-loses) Zip.
+        db_path = self._canonical_db
+        snap = None
+        if db_path.exists():
+            snap = zip_path.with_name(f".{zip_path.stem}.db_snapshot")
+            snapshot_db(db_path, snap)  # Backup-API + integrity_check
+
+        try:
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for dir_name in user_dirs:
+                    dir_path = self.base_path / dir_name
+                    if dir_path.exists():
+                        for item in dir_path.rglob("*"):
+                            if item.is_file():
+                                rel_path = item.relative_to(self.base_path)
+                                zf.write(item, rel_path)
+                                results.append(f"  + {rel_path}")
+                if snap is not None:
+                    zf.write(snap, "data/bach.db")
+                    results.append("  + data/bach.db")
+        finally:
+            if snap is not None:
+                snap.unlink(missing_ok=True)
+
         size_mb = zip_path.stat().st_size / (1024 * 1024)
         results.append(f"\n[OK] Backup erstellt: {zip_name} ({size_mb:.2f} MB)")
         

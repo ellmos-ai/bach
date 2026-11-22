@@ -46,6 +46,7 @@ if str(BACH_DIR) not in sys.path:
 
 from hub.bach_paths import BACH_DB as DB_PATH
 from hub.bach_paths import BACKUPS_DIR as CANONICAL_BACKUPS_DIR
+from hub.db_snapshot import snapshot_db, verify_db
 
 # User-Backups enthalten private Laufzeitdaten und bleiben deshalb ausserhalb
 # des OneDrive-/Git-Checkouts. BACH_BACKUPS_DIR kann den lokalen Root explizit
@@ -197,26 +198,13 @@ class BackupManager:
     def _snapshot_db(self) -> Path:
         """Konsistente DB-Kopie per SQLite-Backup-API (WAL-sicher) neben dem Zip.
 
-        Eine Dateikopie verliert Zeilen aus dem WAL; die Backup-API nicht.
-        Integritaet wird an der Kopie geprueft.
-        ponytail: integrity_check liest die ganze DB (~Sekunden pro 100 MB),
-        quick_check waere schneller, wenn das je stoert.
+        Zentrale Logik: hub.db_snapshot (Backup-API + integrity_check).
         """
         fd, name = tempfile.mkstemp(prefix=".db_snapshot_", suffix=".db",
                                     dir=self.backups_dir)
         os.close(fd)
         self._db_tmp = Path(name)
-        src = sqlite3.connect(self.db_path)
-        dst = sqlite3.connect(self._db_tmp)
-        try:
-            src.backup(dst)
-            result = dst.execute("PRAGMA integrity_check").fetchone()[0]
-            if result != "ok":
-                raise RuntimeError(f"DB-Snapshot defekt: integrity_check={result}")
-        finally:
-            dst.close()
-            src.close()
-        return self._db_tmp
+        return snapshot_db(self.db_path, self._db_tmp)
 
     def _export_user_tables(self) -> Dict:
         """Exportiert User-Tabellen aus der Datenbank."""
@@ -417,7 +405,13 @@ class BackupManager:
             with zipfile.ZipFile(zip_path, 'r') as zf:
                 
                 # 1. Datenbank wiederherstellen
-                if "db_export.json" in zf.namelist():
+                if "data/bach.db" in zf.namelist():
+                    # Neues Format: komplette DB-Datei, fail-closed (vor jedem
+                    # Schreibzugriff geprueft und gesichert).
+                    print("  -> Stelle Datenbank-Datei wieder her...")
+                    self._restore_db_file(zf)
+                elif "db_export.json" in zf.namelist():
+                    # Altes Format (nur JSON-Tabellen): bisheriges Verhalten.
                     print("  -> Stelle Datenbank wieder her...")
                     db_export = json.loads(zf.read("db_export.json"))
                     self._restore_db_tables(db_export)
@@ -457,6 +451,36 @@ class BackupManager:
             print(f"\n  [ERR] Fehler: {e}")
             return False, str(e)
     
+    def _restore_db_file(self, zf: zipfile.ZipFile):
+        """Ersetzt die DB atomar durch data/bach.db aus dem Zip.
+
+        Reihenfolge: (1) DB aus Zip neben das Ziel entpacken und per
+        integrity_check pruefen, (2) aktuelle DB per Backup-API sichern
+        (<db>.pre-restore-<zeit>.bak), (3) WAL/SHM der alten DB entfernen,
+        (4) os.replace. Jeder Fehler vor (3) laesst die DB unberuehrt.
+        ACHTUNG: laufende Prozesse halten die alte Datei offen; vor einem
+        Restore Dienste stoppen.
+        """
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(prefix=".restore_", suffix=".db",
+                                    dir=self.db_path.parent)
+        tmp = Path(name)
+        try:
+            with os.fdopen(fd, "wb") as out:
+                with zf.open("data/bach.db") as src:
+                    shutil.copyfileobj(src, out)
+            verify_db(tmp)
+            if self.db_path.exists():
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safety = self.db_path.with_name(f"{self.db_path.name}.pre-restore-{stamp}.bak")
+                snapshot_db(self.db_path, safety)
+                print(f"  -> Aktuelle DB gesichert: {safety.name}")
+            for suffix in ("-wal", "-shm"):
+                self.db_path.with_name(self.db_path.name + suffix).unlink(missing_ok=True)
+            os.replace(tmp, self.db_path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
     def _restore_db_tables(self, export: Dict):
         """Stellt Datenbank-Tabellen wieder her."""
         with self._get_db() as conn:
