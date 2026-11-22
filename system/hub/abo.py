@@ -663,7 +663,9 @@ class AboHandler(BaseHandler):
             with open(csv_path, 'w', encoding='utf-8') as f:
                 f.write("Anbieter;Kategorie;Betrag_Monatlich;Intervall;Kuendigungslink;Bestaetigt\n")
                 for a in abos:
-                    f.write(f"{a['anbieter']};{a['kategorie'] or ''};{a['betrag_monatlich'] or 0:.2f};{a['zahlungsintervall'] or ''};{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n")
+                    # Unbekannter Betrag bleibt leer, nicht 0.00.
+                    betrag = "" if a['betrag_monatlich'] is None else f"{a['betrag_monatlich']:.2f}"
+                    f.write(f"{a['anbieter']};{a['kategorie'] or ''};{betrag};{a['zahlungsintervall'] or ''};{a['kuendigungslink'] or ''};{'Ja' if a['bestaetigt'] else 'Nein'}\n")
 
             return (True, f"[OK] Export erstellt: {csv_path}")
 

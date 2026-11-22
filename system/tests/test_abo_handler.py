@@ -268,6 +268,18 @@ class TestAboTrackerImport:
         ok, msg = handler.handle("import", [str(self._write(tmp_path, self._payload()))])
         assert ok and "[WARN]" not in msg
 
+    def test_export_leaves_unknown_amount_empty(self, abo_env):
+        handler, base, db_path = abo_env
+        conn = sqlite3.connect(db_path)
+        conn.execute("INSERT INTO abo_subscriptions (name, anbieter, betrag_monatlich, aktiv) VALUES ('A', 'Alpha', NULL, 1)")
+        conn.execute("INSERT INTO abo_subscriptions (name, anbieter, betrag_monatlich, aktiv) VALUES ('B', 'Beta', 4.5, 1)")
+        conn.commit()
+        conn.close()
+        ok, _msg = handler.handle("export", [])
+        assert ok
+        lines = (base / "data" / "abo_export.csv").read_text(encoding="utf-8").splitlines()
+        assert "Alpha;;;" in lines[1] and "Beta;;4.50;" in lines[2]
+
     def test_schedule_import_upserts_active_job(self, abo_env, tmp_path):
         handler, _, db_path = abo_env
         source = tmp_path / "abos.json"
