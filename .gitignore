@@ -417,5 +417,8 @@ desktop-installers/
 *dump*.sql
 *dump*.csv
 *dump*.log
+*dump*.yaml
+*dump*.yml
+*.dump
 *dump
 /system/C:*

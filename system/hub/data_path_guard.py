@@ -32,8 +32,9 @@ DATA_PATH_PATTERNS = tuple(re.compile(p) for p in (
     r"(^|/)inbox_config[^/]*\.json$",
     r"^system/data/[^/]*\.pre-",                           # config backups (*.json.pre-*)
     # message/db dumps; only data endings (or none), so json_dump.py stays code
-    r"(^|/)[^/]*dump[^/]*\.(json|jsonl|sql|txt|csv|tsv|db|log|xml|gz|zip|tar)$",
+    r"(^|/)[^/]*dump[^/]*\.(json|jsonl|sql|txt|csv|tsv|db|log|xml|ya?ml|gz|zip|tar)$",
     r"(^|/)[^/.]*dump[^/.]*$",
+    r"\.dump$",                                            # pg_dump, core.dump, heap.dump
     r"(^|/)TO-DECIDE-USER",                                # user decisions
     r"(^|/)exports/",                                      # exports/**, system/exports/**
     r"(^|/)\.pytest_tmp/",

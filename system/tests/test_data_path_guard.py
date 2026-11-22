@@ -32,6 +32,9 @@ LEAKED_EXAMPLES = [
     "TO-DECIDE-USER.txt",
     "exports2/db_dump.sql",
     "system/data/telegram_dump",
+    "system/data/core.dump",
+    "backups/bach_2026.dump",
+    "exports2/state_dump.yaml",
     "system/.pytest_tmp/run1/out.txt",
 ]
 
