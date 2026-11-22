@@ -2628,20 +2628,33 @@
             let boardRef = null;
             let autorun = false;
             try {
-                const params = new URLSearchParams(window.location.search);
-                boardRef = params.get('board_id') || params.get('board');
-                autorun = params.get('board_autorun') === '1' || params.get('board_autorun') === 'true';
-                if (!boardRef) return;
-                params.delete('board_id');
-                params.delete('board');
-                params.delete('board_autorun');
-                const qs = params.toString();
-                const cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
-                if (window.history && window.history.replaceState) {
-                    window.history.replaceState(null, '', cleanUrl);
+                const pendingRaw = sessionStorage.getItem('bach.pendingBoardRunner');
+                if (pendingRaw) {
+                    sessionStorage.removeItem('bach.pendingBoardRunner');
+                    const parsed = JSON.parse(pendingRaw);
+                    if (parsed && parsed.board) {
+                        boardRef = String(parsed.board);
+                        autorun = Boolean(parsed.autorun);
+                    }
                 }
-            } catch (_) {
-                return;
+            } catch (_) {}
+            if (!boardRef) {
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    boardRef = params.get('board_id') || params.get('board');
+                    autorun = params.get('board_autorun') === '1' || params.get('board_autorun') === 'true';
+                    if (!boardRef) return;
+                    params.delete('board_id');
+                    params.delete('board');
+                    params.delete('board_autorun');
+                    const qs = params.toString();
+                    const cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, '', cleanUrl);
+                    }
+                } catch (_) {
+                    return;
+                }
             }
             try {
                 const resp = await fetch('/api/prompt-library/boards/' + encodeURIComponent(boardRef), {

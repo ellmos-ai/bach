@@ -1089,7 +1089,7 @@ class BACHTray:
         self._prompt_db_sig = self._prompt_db_signature()
         if self.icon:
             fav_count = len(self.favorite_prompts)
-            board_count = len(self.prompt_boards)
+            board_count = len(getattr(self, "prompt_boards", []))
             total_count = sum(len(p) for p in self.prompts.values())
             self.icon.notify(
                 f"{fav_count} Favoriten, {board_count} Boards, {total_count} Prompts geladen",
@@ -1235,14 +1235,14 @@ class BACHTray:
             "prompt_categories": list(self.prompts.keys()),
             "prompt_count": prompt_count,
             "favorite_count": len(self.favorite_prompts),
-            "prompt_boards_count": len(self.prompt_boards),
+            "prompt_boards_count": len(getattr(self, "prompt_boards", [])),
             "prompt_boards": [
                 {
                     "id": b.get("id"),
                     "title": b.get("title"),
                     "prompt_count": len(b.get("prompts", [])),
                 }
-                for b in self.prompt_boards
+                for b in getattr(self, "prompt_boards", [])
             ],
             "prompt_board_submenu_ready": True,
             "board_runner_supported": True,
@@ -1975,8 +1975,9 @@ class BACHTray:
         prompt_items.append(pystray.Menu.SEPARATOR)
 
         board_menu_items = []
-        if self.prompt_boards:
-            for board in self.prompt_boards:
+        prompt_boards = getattr(self, "prompt_boards", [])
+        if prompt_boards:
+            for board in prompt_boards:
                 b_title = board.get("title") or "Unbenanntes Board"
                 b_desc = board.get("description") or ""
                 b_prompts = board.get("prompts") or []
@@ -2011,7 +2012,7 @@ class BACHTray:
                 pystray.MenuItem("(Keine Prompt-Boards in BACH gespeichert)", None, enabled=False)
             )
         prompt_items.append(
-            pystray.MenuItem(f"📋 Gespeicherte Boards ({len(self.prompt_boards)})", pystray.Menu(*board_menu_items))
+            pystray.MenuItem(f"📋 Gespeicherte Boards ({len(prompt_boards)})", pystray.Menu(*board_menu_items))
         )
         prompt_items.append(pystray.Menu.SEPARATOR)
 

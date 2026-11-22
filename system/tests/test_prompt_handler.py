@@ -99,7 +99,7 @@ class TestPromptHandlerInit:
 
     def test_operations(self, handler):
         ops = handler.get_operations()
-        expected = {"list", "add", "get", "update", "delete", "search", "boards", "board", "import_promptboard", "export_promptboard", "sync_promptboard", "favorite"}
+        expected = {"list", "add", "get", "update", "delete", "search", "boards", "board", "import_promptboard", "import_software", "export_promptboard", "sync_promptboard", "favorite"}
         assert set(ops.keys()) == expected
 
 

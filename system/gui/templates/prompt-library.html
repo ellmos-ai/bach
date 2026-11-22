@@ -577,7 +577,10 @@
             const boardEl = document.getElementById('pl-board-filter');
             const boardVal = boardEl ? boardEl.value : '';
             if (!boardVal) return;
-            window.location.href = '/chat?board=' + encodeURIComponent(boardVal) + '&board_autorun=1';
+            try {
+                sessionStorage.setItem('bach.pendingBoardRunner', JSON.stringify({ board: boardVal, autorun: true }));
+            } catch (_) {}
+            window.location.assign('/chat');
         }
 
         function toggleTagMatrixChip(tag) {
