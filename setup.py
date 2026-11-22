@@ -10,8 +10,8 @@ Führt deterministische Schritte aus die kein LLM brauchen.
 
 Schritte (S1-S7):
   S1: Python-Pakete installieren (requirements.txt)
-  S2: bach.db initialisieren (127 Tabellen via schema.sql)
-  S3: Migrations ausführen (11 SQL-Migrations)
+  S2: Frische bach.db aus dem aktuellen Schema initialisieren
+  S3: Ausstehende Migrationen anhand des gebuchten Stands ausführen
   S4: Pflichtverzeichnisse anlegen
   S5: user/secrets/secrets.json Skeleton
   S6: system_identity in DB
@@ -34,6 +34,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 try:  # pragma: no cover - Importpfad haengt vom Aufrufkontext ab
     from system.tools.installer_manifest import (
@@ -62,6 +63,8 @@ except ImportError:  # direkter Aufruf: setup.py als Skript neben system/
         verify_component_set,
         verify_grant,
     )
+
+from system.core.db import Database, migration_filenames, read_applied_migration_filenames
 
 _PACKAGING_COMMANDS = {
     "egg_info",
@@ -188,6 +191,7 @@ class BACHSetup:
         # Lazy: MutationJournal erst bei Bedarf anlegen, damit verify() keine
         # Verzeichnisse erzeugt (Fail-closed: keine Mutation vor der Pruefung).
         self._journal = None
+        self._created_database = False
 
     @property
     def journal(self):
@@ -307,7 +311,7 @@ class BACHSetup:
     def _journal_step(self, step_id: str):
         """Protokolliert die von einem Schritt mutierten Ziele im Mutationsjournal."""
         if step_id == "S2":
-            if self.db_path.exists():
+            if self._created_database:
                 self.journal.record(
                     "create", self.db_path, digest=file_digest(self.db_path), component="S2"
                 )
@@ -388,68 +392,51 @@ class BACHSetup:
             )
 
     def _step_s2_db_init(self, _):
-        """S2: bach.db initialisieren (127 Tabellen via schema.sql)."""
+        """S2: Vollschema und Migrationsstand einer frischen DB anlegen."""
+        self._created_database = False
         schema_sql = self.schema_dir / "schema.sql"
-
-        if not schema_sql.exists():
+        if not schema_sql.is_file():
             raise FileNotFoundError(f"schema.sql nicht gefunden: {schema_sql}")
+        if self.db_path.exists():
+            print(f"     [SKIP] Bestehende Datenbank: {self.db_path}")
+            return
 
-        # DB anlegen falls noch nicht vorhanden
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Erst die fertige DB veröffentlichen. Ein paralleler Setup-Lauf
+        # darf eine bereits veröffentlichte Datenbank nicht ersetzen.
+        with TemporaryDirectory(prefix=".bach-setup-", dir=self.db_path.parent) as staging:
+            staged_path = Path(staging) / self.db_path.name
+            db = Database(staged_path, self.schema_dir)
+            db.init_schema()
+            db.apply_seed_migrations()
+            db.baseline_migrations()
+            os.link(staged_path, self.db_path)
 
-        conn = sqlite3.connect(str(self.db_path))
-        script = schema_sql.read_text(encoding='utf-8')
-        conn.executescript(script)
-        conn.commit()
-        conn.close()
-
+        self._created_database = True
         print(f"     DB initialisiert: {self.db_path}")
 
     def _step_s3_migrations(self, _):
-        """S3: Migrations ausfuehren (SQL + Python)."""
-        migrations_dir = self.schema_dir / "migrations"
-
-        if not migrations_dir.exists():
-            print(f"     [SKIP] Kein migrations-Ordner gefunden")
+        """S3: Ausstehende Migrationen einer bereits gebuchten DB ausführen."""
+        names = migration_filenames(self.schema_dir / "migrations")
+        if not names:
             return
+        if not read_applied_migration_filenames(self.db_path):
+            raise RuntimeError(
+                "Der Datenbank fehlt der Migrationsstand. "
+                "Prüfe den Stand mit bach update migrations list, bevor du die Baseline buchst."
+            )
+        db = Database(self.db_path, self.schema_dir)
+        backlog = db.migration_backlog()
+        if backlog:
+            raise RuntimeError(
+                "Der Datenbank fehlen ältere Migrationsbuchungen: " + ", ".join(backlog)
+            )
 
-        # SQL-Migrations
-        sql_files = sorted(migrations_dir.glob("*.sql"))
-        py_files = sorted(migrations_dir.glob("*.py"))
-        all_files = sorted(sql_files + py_files, key=lambda f: f.stem)
-
-        if not all_files:
-            print(f"     [SKIP] Keine Migrations gefunden")
-            return
-
-        conn = sqlite3.connect(str(self.db_path))
-
-        for migration_file in all_files:
-            try:
-                if migration_file.suffix == ".sql":
-                    script = migration_file.read_text(encoding='utf-8')
-                    conn.executescript(script)
-                elif migration_file.suffix == ".py":
-                    # Python-Migration: Modul laden und run(conn) aufrufen
-                    import importlib.util
-                    spec = importlib.util.spec_from_file_location(
-                        f"migration_{migration_file.stem}", migration_file
-                    )
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                    if hasattr(mod, 'run'):
-                        mod.run(conn)
-                    elif hasattr(mod, 'migrate'):
-                        mod.migrate(conn)
-                print(f"     Migration angewendet: {migration_file.name}")
-            except Exception as e:
-                conn.close()
-                raise RuntimeError(
-                    f"Migration {migration_file.name} fehlgeschlagen: {e}"
-                ) from e
-
-        conn.commit()
-        conn.close()
+        applied, error = db.run_migrations()
+        if error:
+            raise RuntimeError(error)
+        for name in applied:
+            print(f"     Migration angewendet: {name}")
 
     def _step_s4_directories(self, _):
         """S4: Pflichtverzeichnisse anlegen."""

@@ -1,7 +1,7 @@
 """Abbruchpfad-Tests fuer den fail-closed Installer (#3715).
 
-Geprueft werden ausschliesslich Verweigerungspfade, die vor jeder Mutation
-greifen muessen:
+Geprüft werden Verweigerungspfade vor der ersten Mutation und die Einrichtung
+der Datenbank mit einem gültigen Grant.
 
 (a) Abweichung zwischen Manifest- und Profilkomponentenmenge
 (b) fehlender bzw. falsch signierter Capability-Grant
@@ -13,6 +13,7 @@ greifen muessen:
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from setup import BACHSetup  # noqa: E402
+from system.core.db import Database  # noqa: E402
 from system.tools.installer_manifest import (  # noqa: E402
     GRANT_SCHEMA,
     MANIFEST_SCHEMA,
@@ -35,6 +37,7 @@ from system.tools.installer_manifest import (  # noqa: E402
     load_manifest,
     payload_digest,
     plan_rollback,
+    read_journal,
 )
 
 KEY = "test-key-3715"
@@ -248,3 +251,78 @@ def test_doppelte_profilkomponente_bricht_ab(tmp_path: Path) -> None:
     assert "Soll-Menge enthaelt Duplikate" in str(excinfo.value)
     assert "beta" in str(excinfo.value)
     assert not installer.journal_path.exists()
+
+
+def _copy_db_schema(installer: BACHSetup) -> None:
+    shutil.copytree(ROOT / "system" / "data" / "schema", installer.schema_dir)
+
+
+def test_fresh_setup_uses_schema_baseline_and_seeds(tmp_path: Path) -> None:
+    installer = _setup(tmp_path, manifest_components=["alpha"], profile_components=["alpha"])
+    _copy_db_schema(installer)
+
+    assert installer.run(skip_pip=True, quiet=True)
+    with Database(installer.db_path, installer.schema_dir).connect_readonly() as conn:
+        assert tuple(conn.execute("PRAGMA integrity_check").fetchone()) == ("ok",)
+        assert tuple(conn.execute("SELECT count(*) FROM instance_identity").fetchone()) == (1,)
+        assert conn.execute("SELECT count(*) FROM context_triggers").fetchone()[0] > 0
+        assert tuple(conn.execute(
+            "SELECT count(*) FROM _migrations WHERE filename = '001_connector_queue_upgrade.sql'"
+        ).fetchone()) == (1,)
+        names = {row[0] for row in conn.execute("SELECT filename FROM _migrations")}
+        assert "047_between_triggers.sql" in names
+
+    assert installer.run(skip_pip=True, quiet=True)
+    with Database(installer.db_path, installer.schema_dir).connect_readonly() as conn:
+        assert tuple(conn.execute("SELECT count(*) FROM instance_identity").fetchone()) == (1,)
+        assert {row[0] for row in conn.execute("SELECT filename FROM _migrations")} == names
+    targets = [
+        entry for entry in read_journal(installer.journal_path)
+        if entry["op"] == "create" and Path(entry["target"]) == installer.db_path
+    ]
+    assert len(targets) == 1
+
+
+def test_setup_applies_only_new_migrations_on_existing_database(tmp_path: Path) -> None:
+    installer = _setup(tmp_path, manifest_components=["alpha"], profile_components=["alpha"])
+    _copy_db_schema(installer)
+    assert installer.run(skip_pip=True, quiet=True)
+
+    name = "999_setup_regression.sql"
+    (installer.schema_dir / "migrations" / name).write_text(
+        "CREATE TABLE installer_probe (value TEXT);\n"
+        "INSERT INTO installer_probe VALUES ('applied');\n",
+        encoding="utf-8",
+    )
+    assert installer.run(skip_pip=True, quiet=True)
+    assert installer.run(skip_pip=True, quiet=True)
+    with Database(installer.db_path, installer.schema_dir).connect_readonly() as conn:
+        assert [row[0] for row in conn.execute("SELECT value FROM installer_probe")] == ["applied"]
+        assert tuple(conn.execute(
+            "SELECT count(*) FROM _migrations WHERE filename = ?", (name,)
+        ).fetchone()) == (1,)
+
+
+def test_setup_rejects_existing_database_without_migration_history(tmp_path: Path) -> None:
+    installer = _setup(tmp_path, manifest_components=["alpha"], profile_components=["alpha"])
+    _copy_db_schema(installer)
+    Database(installer.db_path, installer.schema_dir).init_schema()
+    before = file_digest(installer.db_path)
+
+    assert installer.run(skip_pip=True, quiet=True) is False
+    assert file_digest(installer.db_path) == before
+    assert all(entry["op"] != "create" for entry in read_journal(installer.journal_path))
+
+
+def test_setup_can_retry_after_failed_schema_initialization(tmp_path: Path) -> None:
+    installer = _setup(tmp_path, manifest_components=["alpha"], profile_components=["alpha"])
+    _copy_db_schema(installer)
+    schema = installer.schema_dir / "schema.sql"
+    valid = schema.read_text(encoding="utf-8")
+    schema.write_text(valid + "\nINVALID SQL;\n", encoding="utf-8")
+
+    assert installer.run(skip_pip=True, quiet=True) is False
+    assert not installer.db_path.exists()
+
+    schema.write_text(valid, encoding="utf-8")
+    assert installer.run(skip_pip=True, quiet=True)
