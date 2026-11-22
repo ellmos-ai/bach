@@ -304,8 +304,6 @@ def has_blocking_hook_guards(
     """Return True unless hook_guards is empty or solely verified non-embargo host global hooks."""
     if not isinstance(payload, dict):
         return True
-    if "hook_guards" not in payload:
-        return False
     guards = payload.get("hook_guards")
     if not isinstance(guards, list):
         return True

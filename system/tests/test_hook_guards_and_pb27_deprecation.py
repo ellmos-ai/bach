@@ -78,7 +78,10 @@ def _global_guards_payload(hooks_dir: Path, checked: Path) -> dict:
 
 
 def test_hook_guards_empty_and_malformed_cases(tmp_path):
-    assert guard.has_blocking_hook_guards({"locks": []}, tmp_path) is False
+    # Missing hook_guards key must fail closed so incomplete/legacy payloads cannot bypass guard checks.
+    assert guard.has_blocking_hook_guards({}, tmp_path) is True
+    assert guard.has_blocking_hook_guards({"locks": []}, tmp_path) is True
+    assert guard.has_blocking_hook_guards({"locks": [], "hook_guards": None}, tmp_path) is True
     assert guard.has_blocking_hook_guards({"locks": [], "hook_guards": []}, tmp_path) is False
     assert guard.has_blocking_hook_guards("not-a-dict", tmp_path) is True  # type: ignore[arg-type]
     assert guard.has_blocking_hook_guards({"hook_guards": "invalid"}, tmp_path) is True
