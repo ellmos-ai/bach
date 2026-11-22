@@ -70,8 +70,15 @@ Kanaele (delivery_methods):
 Modi: `parallel` (alle konfigurierten Methoden parallel) oder
 `only` (nur angegebene Methode(n)).
 
-Konfiguration: Config-Datei, sonst Default
-(`default_delivery`: mode=parallel, methods=[user_folder]).
+Ohne explizites `base_path` lädt `DeliveryEngine()` die lokale Datei
+`~/.bach/config/delivery_preferences.json`. Mit `BACH_LOCAL_DIR` lässt sich
+der lokale BACH-Ordner setzen. Fehlt die Datei dort, gilt die mitgelieferte
+Datei unter `system/data/config/delivery_preferences.json`.
+
+`DeliveryEngine(base_path=...)` liest weiterhin `data/config/delivery_preferences.json`
+unter dem angegebenen Basisordner. Fehlt die ausgewählte Datei oder ist sie
+unlesbar, verwendet die Engine die eingebaute Zustellung in den User-Ordner.
+Relative Zustellpfade beziehen sich weiterhin auf den Basisordner der Engine.
 
 ---
 
