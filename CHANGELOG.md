@@ -1,5 +1,12 @@
 # BACH Changelog
 
+## Unreleased — Kredite und Umschuldung über credits-core
+
+- Neuer Handler `bach kredit` (`import`, `list`, `ueberblick`, `vergleich --angebot ZINS/MONATE`) als dünner Adapter auf das Ocean-Modul `credits-core` (Finanzbündel `ellmos-finance-assist-bundle`). Fachlogik und Speicher liegen im Modul, BACH übersetzt nur das Format `umschuldung-state/1` und formatiert die Ausgabe.
+- Migration `055_credit_contracts.sql` und `schema.sql` legen die Tabelle `credit_contracts` an (Nutzerdaten, `dist_type = 0`).
+- `ocean_stack_bridge.load_credits_core_module()` lädt das Modul aus dem Nachbar-Repo oder der Installation.
+- Tests `system/tests/test_kredit_handler.py` (13, nur künstliche Daten; werden übersprungen, wenn `credits-core` nicht installiert ist).
+
 ## [3.15.0-ocean-stack-m1] – BACH als gebrandeter Teil-OS-Stack von Ocean (2026-10-31)
 
 - **Zentrale Ocean-Stack-Consumer-Brücke (`system/hub/_services/ocean_stack_bridge.py`):** Verbindet BACH direkt mit den herausgelösten und neuen Ocean-Modulen (`ocean-resources` `RAMDistributor`, `task-master` `TaskLeaseManager`, `open-ocean` `worker_worktree_policy`, `task_result_review_policy`, `escalation_ladder`, `persona_routing`, `learning_loop`, `agent_library`, `capability_views`, `governance_bridge`) und exponiert den Live-Bindungsstatus unter `GET /api/ocean/stack-bindings`.

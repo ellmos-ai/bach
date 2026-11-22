@@ -1270,6 +1270,33 @@ CREATE TABLE IF NOT EXISTS fin_insurance_claims (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 , dist_type INTEGER DEFAULT 0);
 
+-- Kredite (credits-core, Migration 055)
+CREATE TABLE IF NOT EXISTS credit_contracts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    creditor TEXT NOT NULL,
+    kind TEXT,
+    reference TEXT,
+    status TEXT,
+    active INTEGER,
+    start_date TEXT,
+    principal REAL,
+    monthly_payment REAL,
+    term_months INTEGER,
+    eff_rate_min REAL,
+    eff_rate_max REAL,
+    nominal_rate REAL,
+    remaining_min REAL,
+    remaining_max REAL,
+    remaining_basis TEXT NOT NULL DEFAULT 'unknown',
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    dist_type INTEGER DEFAULT 0,
+    UNIQUE (source, source_id)
+);
+
 CREATE TABLE IF NOT EXISTS financial_emails (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER REFERENCES mail_accounts(id),
