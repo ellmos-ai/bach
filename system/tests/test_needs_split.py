@@ -198,12 +198,13 @@ def test_context_wip_uses_wip_commit_path(monkeypatch, tmp_path):
     assert result["success"] is True
     kwargs = calls[0]
     assert kwargs["is_wip"] is True and kwargs["run_tests"] is False
+    assert kwargs["push"] is False
     assert kwargs["needs_split"] is True
     assert "system/a.py" in kwargs["result_annotation"]
     assert "Keine abgeschlossene Übergabe" in kwargs["result_annotation"]
 
 
-def test_finish_task_preserves_wip_commit_push_and_receipt(monkeypatch, tmp_path):
+def test_finish_task_keeps_wip_local_and_records_receipt(monkeypatch, tmp_path):
     from hub import worker_git
     from hub._services.chat import worker_write_guard
     remote = tmp_path / "origin.git"
@@ -237,12 +238,12 @@ def test_finish_task_preserves_wip_commit_push_and_receipt(monkeypatch, tmp_path
         worker_task_binding=Binding(), result_annotation="[WIP] synthetischer Kontext",
         needs_split=True)
     assert result["success"] is True and result["needs_split"] is True
+    assert result["status"] == "wip_committed"
     subject = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=target,
                              check=True, capture_output=True, text=True).stdout.strip()
     assert subject.startswith("[WIP] [task 42] Kontextgrenze")
-    local_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=target,
-                               check=True, capture_output=True, text=True).stdout.strip()
+    # SEC-bach-rescue-tag-2026-11-22: the WIP stand stays local, the remote never sees it.
     remote_line = subprocess.run(["git", "ls-remote", str(remote), "refs/heads/bach-task/42"],
                                  check=True, capture_output=True, text=True).stdout
-    assert remote_line.startswith(local_sha)
+    assert remote_line == ""
     assert calls == [(42, "[WIP] synthetischer Kontext", True)]

@@ -7,7 +7,7 @@ Implementiert:
 2. finish_task(task_id, message): Secrets-Scan, git diff --check, Testlauf,
    Commit mit [task <id>], Push und PR auf den vertrauenswürdigen Default-Branch.
    Trägt PR-URL in Task ein und setzt Status auf review.
-   Bei Abbruch/WIP: Sichert Stand als [WIP]-Commit ohne PR.
+   Bei Abbruch/WIP: Sichert Stand als lokalen [WIP]-Commit, nie gepusht.
 3. cleanup_task_worktree(task_id): Entfernt Worktree sauber.
 4. is_live_path_blocked(path): Schützt den Live-Ordner ~/services/bach vor
    Schreibzugriffen außerhalb von bach-worktrees/.
@@ -16,6 +16,7 @@ Implementiert:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shlex
@@ -30,6 +31,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
+
+log = logging.getLogger(__name__)
 
 DEFAULT_WORKTREES_DIR = Path.home() / "services" / "bach-worktrees"
 DEFAULT_BASE_BRANCH = "origin/main"
@@ -940,6 +943,39 @@ def changed_worktree_files(worktree_path: Path) -> list[str]:
     return sorted(set(tracked + _untracked_names(root)))
 
 
+def stage_task_changes(worktree_path: Path, run=subprocess.run) -> Optional[str]:
+    """Stage exactly the task's changed paths, never the whole tree (no ``git add -A``).
+
+    Refuses runtime data (``hub.data_path_guard``) before and after staging, so a
+    missing ``.gitignore`` entry cannot leak data into a commit or push
+    (SEC-bach-rescue-tag-2026-11-22). Returns an error text, or ``None`` on success.
+    """
+    from hub.data_path_guard import data_paths, staged_data_paths
+    try:
+        root = Path(worktree_path).resolve(strict=True)
+        changed = changed_worktree_files(root)
+    except Exception:
+        return "Geänderte Dateien konnten nicht vollständig gelesen werden"
+    present = [p for p in changed if os.path.lexists(root / p)]  # deleting a leaked file stays allowed
+    blocked = data_paths(present)
+    if blocked:
+        return f"Datenpfade dürfen nicht committet werden: {blocked}"
+    if changed:
+        res = run(["git", "--literal-pathspecs", "add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+                  cwd=str(root), input=b"\x00".join(os.fsencode(p) for p in changed),
+                  capture_output=True, check=False, timeout=15)
+        if res.returncode != 0:
+            return "git add der Task-Pfade nicht bestätigt"
+    try:
+        staged = staged_data_paths(str(root))
+    except Exception:
+        return "Gestagte Pfade konnten nicht geprüft werden"
+    if staged:
+        run(["git", "reset", "-q"], cwd=str(root), capture_output=True, check=False, timeout=15)
+        return f"Datenpfade dürfen nicht committet werden: {staged}"
+    return None
+
+
 def check_git_diff(worktree_path: Path) -> list[str]:
     """Check tracked diffs and untracked text for whitespace errors, failing closed."""
     try:
@@ -1109,7 +1145,9 @@ def auto_commit_task_worktree(
         return {"committed": False, "error": f"git diff --check fehlgeschlagen: {diff_errs}"}
 
     commit_msg = f"[task {task_id_str}] Auto-Commit ungecommitteter Änderungen vor submit_result"
-    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    stage_error = stage_task_changes(target_dir, run_checked)
+    if stage_error:
+        return {"committed": False, "error": stage_error}
     res_commit = run_checked(
         ["git", "commit", "-m", commit_msg],
         cwd=str(target_dir),
@@ -1177,9 +1215,15 @@ def finish_task(task_id, message, *, is_wip=False, run_tests=True, repo_root=Non
                 result_annotation=None, needs_split=False, push=True):
     """Preserve private ownership through every Git mutation and task receipt.
 
-    ``push=False`` (WIP only) commits locally with ``message`` as subject and
-    never contacts the remote (PB-14: no abandoned dirty task trees).
+    A WIP stand is always committed locally only and never contacts the remote
+    (PB-14; SEC-bach-rescue-tag-2026-11-22: snapshots must not reach the public
+    origin). Only a regular finish with PR pushes. ``is_wip`` with ``push=True``
+    is downgraded to local and logged.
     """
+    if is_wip and push:
+        log.warning("wip_push_downgraded_to_local task_id=%s", task_id)
+        push = False
+        message = f"[WIP] [task {str(task_id).strip()}] {message}"
     if not push and not is_wip:
         return {"success": False, "error": "Nur ein WIP-Stand darf ohne Push gesichert werden"}
     if require_task_binding and worker_task_binding is None:
@@ -1250,15 +1294,14 @@ def _finish_task(
     Normaler Modus:
     1. Secrets-Scan & git diff --check
     2. Tests der geänderten Dateien ausführen
-    3. git add -A && commit [task <id>] message
+    3. stage_task_changes (nur Task-Pfade, Datenpfade verweigert) && commit [task <id>] message
     4. git push -u origin bach-task/<id>
     5. gh pr create --base <trusted default branch>
     6. PR-URL in Task eintragen, Status auf review
 
     WIP-Modus:
     1. Secrets-Scan & git diff --check
-    2. git add -A && commit [WIP] [task <id>] message
-    3. git push -u origin bach-task/<id> (ohne PR)
+    2. stage_task_changes && commit message (lokal, nie gepusht)
     4. Vermerk in Task
     """
     if worker_task_binding is None:
@@ -1341,8 +1384,10 @@ def _finish_task(
 
     if is_wip:
         # WIP-Commit
-        commit_msg = f"[WIP] [task {task_id_str}] {message}" if push else message
-        run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+        commit_msg = message
+        stage_error = stage_task_changes(target_dir, run_checked)
+        if stage_error:
+            return {"success": False, "error": stage_error}
         res_commit = run_checked(
             ["git", "commit", "-m", commit_msg],
             cwd=str(target_dir),
@@ -1357,28 +1402,12 @@ def _finish_task(
             note_progress = getattr(worker_task_binding, "note_progress", None)
             if callable(note_progress):
                 note_progress()  # PB-1: a real commit keeps the lease out of the no-progress count
-        if not push:
-            worker_task_binding.record_worktree_result(
-                int(task_id_str), result_annotation or f"[WIP] Stand lokal auf {branch_name} committet (ohne Push)",
-                needs_split=needs_split)
-            return {"success": True, "wip": True, "branch": branch_name,
-                    "status": "wip_committed", "needs_split": needs_split}
-        res_push = run_checked(
-            ["git", "push", "-u", "origin", branch_name],
-            cwd=str(target_dir),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-        )
-
-        if res_push.returncode != 0:
-            return {"success": False, "error": "WIP-Push nicht bestätigt"}
-        annotation = result_annotation or f"[WIP] Stand auf {branch_name} gesichert"
+        # Never pushed (SEC-bach-rescue-tag-2026-11-22): the stand stays in the local task tree.
         worker_task_binding.record_worktree_result(
-            int(task_id_str), annotation, needs_split=needs_split)
+            int(task_id_str), result_annotation or f"[WIP] Stand lokal auf {branch_name} committet (ohne Push)",
+            needs_split=needs_split)
         return {"success": True, "wip": True, "branch": branch_name,
-                "status": "wip_pushed", "needs_split": needs_split}
+                "status": "wip_committed", "needs_split": needs_split}
 
     # Normaler Abschluss: Tests aller geänderten getrackten und neuen Dateien.
     test_evidence = "Kein Testlauf angefordert" if not run_tests else "Keine geänderten Testdateien gefunden; kein Testlauf"
@@ -1435,8 +1464,10 @@ def _finish_task(
 
             test_evidence = f"Gebundener pytest-Lauf: Exitcode 0; {len(test_files)} Testdateien"
 
-    # Stage & Commit
-    run_checked(["git", "add", "-A"], cwd=str(target_dir), check=False, timeout=15)
+    # Stage & Commit: only the task's paths, data paths refused (SEC-bach-rescue-tag-2026-11-22)
+    stage_error = stage_task_changes(target_dir, run_checked)
+    if stage_error:
+        return {"success": False, "error": stage_error}
     commit_msg = f"[task {task_id_str}] {message}"
     res_commit = run_checked(
         ["git", "commit", "-m", commit_msg],

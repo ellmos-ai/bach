@@ -1218,10 +1218,10 @@ TOOLS_SAFE = [
     _tool("start_task_worktree", "Erzeugt einen isolierten Git-Worktree für eine Aufgabe unter ~/services/bach-worktrees/task-<id>", {
         "task_id": {"type": "integer", "description": "ID der Aufgabe"},
     }, ["task_id"]),
-    _tool("finish_task", "Schließt die Aufgabe im Worktree ab: führt Tests aus, committet, pusht und erstellt einen PR. Bei Abbruch setzt is_wip=True einen WIP-Commit.", {
+    _tool("finish_task", "Schließt die Aufgabe im Worktree ab: führt Tests aus, committet, pusht und erstellt einen PR. Bei Abbruch setzt is_wip=True einen lokalen WIP-Commit (ohne Push, ohne PR).", {
         "task_id": {"type": "integer", "description": "ID der Aufgabe"},
         "message": {"type": "string", "description": "Commit- und PR-Beschreibung"},
-        "is_wip": {"type": "boolean", "description": "True falls unvollständig/Abbruch (sichert WIP-Stand ohne PR)"},
+        "is_wip": {"type": "boolean", "description": "True falls unvollständig/Abbruch (sichert WIP-Stand lokal, ohne Push und ohne PR)"},
     }, ["task_id", "message"]),
     _tool("cleanup_task_worktree", "Entfernt den Worktree für eine Aufgabe, nachdem der PR gemergt ist.", {
         "task_id": {"type": "integer", "description": "ID der Aufgabe"},
@@ -2002,7 +2002,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 private = ({"worker_task_binding": worker_task_binding,
                             "require_task_binding": require_task_binding}
                            if worker_task_binding is not None or require_task_binding else {})
-                res = finish_task(tid, msg, is_wip=is_wip, **private)
+                if is_wip:  # WIP stays local, never pushed (SEC-bach-rescue-tag-2026-11-22)
+                    res = finish_task(tid, f"[WIP] [task {tid}] {msg}", is_wip=True, push=False, **private)
+                else:
+                    res = finish_task(tid, msg, **private)
                 return json.dumps(res, ensure_ascii=False)
             except Exception as e:
                 return _tool_effect_unconfirmed()
