@@ -498,13 +498,18 @@
                 <div class="send-options">
                     <h3>Senden</h3>
                     <div class="send-buttons">
+                        <button class="send-btn primary" id="btn-execute-direct" onclick="executeDirectPrompt()" title="Führt den Prompt direkt über Cortex / Chat-Backend aus und zeigt die Antwort inline an">
+                            <span class="send-btn-icon">⚡</span>
+                            <span class="send-btn-label">Direkt ausführen</span>
+                            <span class="send-btn-desc">Cortex / Live-Chat</span>
+                        </button>
                         <button class="send-btn" onclick="sendAsTask()">
                             <span class="send-btn-icon">📋</span>
                             <span class="send-btn-label">Als Task</span>
                             <span class="send-btn-desc">In Warteschlange</span>
                         </button>
-                        <button class="send-btn primary" onclick="sendDirectSession()">
-                            <span class="send-btn-icon">⚡</span>
+                        <button class="send-btn" onclick="sendDirectSession()">
+                            <span class="send-btn-icon">🚀</span>
                             <span class="send-btn-label">Direkt Session</span>
                             <span class="send-btn-desc">Sofort starten</span>
                         </button>
@@ -514,7 +519,7 @@
                             <span class="send-btn-desc">Im Chat öffnen</span>
                         </button>
                         <button class="send-btn" onclick="copyToClipboard()">
-                            <span class="send-btn-icon">📋</span>
+                            <span class="send-btn-icon">📄</span>
                             <span class="send-btn-label">Kopieren</span>
                             <span class="send-btn-desc">In Zwischenablage</span>
                         </button>
@@ -523,6 +528,24 @@
                             <span class="send-btn-label">Daemon</span>
                             <span class="send-btn-desc">Zeitgesteuert</span>
                         </button>
+                    </div>
+                </div>
+
+                <!-- Live Execution Panel (Direct Cortex/Chat Execution) -->
+                <div id="direct-exec-panel" style="display:none; background:var(--bg-panel); border:1px solid var(--accent); border-radius:12px; padding:1.2rem; margin-bottom:1.5rem;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <span style="font-size:1.2rem;">⚡</span>
+                            <strong style="font-size:0.95rem; color:var(--accent);">Live-Antwort (Cortex Responder)</strong>
+                            <span id="direct-exec-meta" style="font-size:0.75rem; color:var(--text-muted); background:var(--bg-card); padding:2px 8px; border-radius:12px;"></span>
+                        </div>
+                        <div style="display:flex; gap:0.5rem;">
+                            <button class="btn" style="padding:4px 10px; font-size:0.8rem;" onclick="copyDirectExecReply()">📋 Kopieren</button>
+                            <button class="btn" style="padding:4px 10px; font-size:0.8rem;" onclick="openDirectExecInChat()">💬 Im Chat weiterführen</button>
+                            <button class="btn" style="padding:4px 8px; font-size:0.8rem;" onclick="document.getElementById('direct-exec-panel').style.display='none'">✕</button>
+                        </div>
+                    </div>
+                    <div id="direct-exec-content" style="white-space:pre-wrap; font-family:var(--font-mono, monospace); font-size:0.88rem; line-height:1.5; background:var(--bg-dark); padding:1rem; border-radius:8px; border:1px solid var(--border); max-height:400px; overflow-y:auto; color:var(--text);">
                     </div>
                 </div>
 
@@ -859,6 +882,85 @@
             }
         }
 
+        let _lastDirectReply = '';
+
+        async function executeDirectPrompt() {
+            const prompt = applyVariables();
+            if (!prompt.trim()) {
+                showToast('Bitte erst einen Prompt eingeben', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btn-execute-direct');
+            const panel = document.getElementById('direct-exec-panel');
+            const content = document.getElementById('direct-exec-content');
+            const meta = document.getElementById('direct-exec-meta');
+
+            if (btn) btn.disabled = true;
+            if (panel) panel.style.display = 'block';
+            if (content) content.textContent = '⏳ Sende Prompt an Cortex Responder...';
+            if (meta) meta.textContent = 'Warte auf Antwort...';
+
+            const startTime = performance.now();
+            try {
+                const res = await api('/api/prompts/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: prompt,
+                        persona: 'buddha',
+                        language: 'de'
+                    })
+                });
+
+                const latency = Math.round(performance.now() - startTime);
+                if (res && res.status === 'ok') {
+                    _lastDirectReply = res.clean_reply || res.reply || '';
+                    if (content) content.textContent = _lastDirectReply;
+                    if (meta) meta.textContent = `Persona: ${res.persona || 'buddha'} • Latenz: ${latency}ms`;
+                    showToast('Prompt erfolgreich ausgeführt!', 'success');
+                } else {
+                    const errMsg = (res && (res.error || res.message)) || 'Ausführung fehlgeschlagen';
+                    if (content) content.textContent = 'Fehler: ' + errMsg;
+                    if (meta) meta.textContent = 'Fehlgeschlagen';
+                    showToast(errMsg, 'error');
+                }
+            } catch (err) {
+                if (content) content.textContent = 'Fehler: ' + err.message;
+                if (meta) meta.textContent = 'Verbindungsfehler';
+                showToast('Verbindungsfehler: ' + err.message, 'error');
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function copyDirectExecReply() {
+            if (!_lastDirectReply) {
+                showToast('Keine Antwort zum Kopieren vorhanden', 'error');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(_lastDirectReply);
+                showToast('Antwort in Zwischenablage kopiert!', 'success');
+            } catch (e) {
+                showToast('Kopieren fehlgeschlagen: ' + e.message, 'error');
+            }
+        }
+
+        function openDirectExecInChat() {
+            if (!_lastDirectReply) {
+                showToast('Keine Antwort zum Übergeben vorhanden', 'error');
+                return;
+            }
+            if (window.BachChatDraft && typeof window.BachChatDraft.store === 'function') {
+                window.BachChatDraft.store(_lastDirectReply);
+                showToast('Antwort an Web-Chat übergeben', 'success');
+                window.location.assign('/chat');
+            } else {
+                showToast('Chat-Draft-Helper nicht verfügbar', 'error');
+            }
+        }
+
         async function sendDirectSession() {
             const prompt = applyVariables();
             if (!prompt.trim()) {
@@ -1110,6 +1212,29 @@
 
             setTimeout(() => toast.remove(), 3000);
         }
+
+        // Global Keyboard Shortcuts (Task -53)
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+K -> Quick Jump to Prompt Library Spotlight
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                window.location.assign('/prompt-library');
+                return;
+            }
+            // In prompt textarea: Ctrl+Enter executes prompt directly
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.id === 'generated-prompt' || activeEl.classList.contains('prompt-textarea'))) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    if (typeof executeDirectPrompt === 'function') {
+                        executeDirectPrompt();
+                    } else if (typeof sendToChat === 'function') {
+                        sendToChat();
+                    }
+                    return;
+                }
+            }
+        });
     </script>
 </body>
 </html>

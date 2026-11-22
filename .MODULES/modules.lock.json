@@ -1,0 +1,247 @@
+{
+  "schema": "bach.modules-lock.v1",
+  "generated_at": "2026-11-14T12:34:37.021213",
+  "total_modules": 30,
+  "modules": {
+    "agent_process_provider": {
+      "name": "agent_process_provider",
+      "version": "1.0.0",
+      "entrypoint": "src/agent_process_provider.py",
+      "sha256": "42fb6b0a16c8c4dc7d015acb618a159e550d6ffa49c197a4851af11fab8e0ca2",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "agent_spawn_gate": {
+      "name": "agent_spawn_gate",
+      "version": "1.0.0",
+      "entrypoint": "src/agent_spawn_gate.py",
+      "sha256": "8181ffdca7a483868e8156691f5d312c0033483c7458d28df1eafda23859d32c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "agents": {
+      "name": "agents",
+      "version": "1.0.0",
+      "entrypoint": "src/agents.py",
+      "sha256": "7b6b72535ad12a7f299dd94030a4130dcdede6634ba95978275840cac1c82e22",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "audit_logger": {
+      "name": "audit_logger",
+      "version": "1.0.0",
+      "entrypoint": "src/audit_logger.py",
+      "sha256": "f96901525d76c3abd95528e05a133b7be99a7ab6b54879f863fa88aa4908642c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "cache": {
+      "name": "cache",
+      "version": "1.0.0",
+      "entrypoint": "src/cache.py",
+      "sha256": "dae4509ed0fbb29249e2b1bd0787d690ab63df6a75c982b00974d69b37c53f1a",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "context_hints": {
+      "name": "context_hints",
+      "version": "1.0.0",
+      "entrypoint": "src/context_hints.py",
+      "sha256": "35e81c2eaffdf9266badb93cac1bf71cbe8fc2f19a66634d65deca0b3bd6457c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "conversation_store": {
+      "name": "conversation_store",
+      "version": "1.0.0",
+      "entrypoint": "src/conversation_store.py",
+      "sha256": "2ea04ee8732f32266ed977b6dfaeace4c924be34f87f8bde39489e1cd24c9a8c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "db_sync_adapter": {
+      "name": "db_sync_adapter",
+      "version": "1.0.0",
+      "entrypoint": "src/db_sync_adapter.py",
+      "sha256": "05f1c68c0f512b184b2aba536f0067c475ef9dc3dcd032f1a12c3a624c7ca559",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "db_sync_readiness": {
+      "name": "db_sync_readiness",
+      "version": "1.0.0",
+      "entrypoint": "src/db_sync_readiness.py",
+      "sha256": "c38689f0b582e59454a7bb9c12481ee2b796751cad567abadbc3afe0ca0026eb",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "domain_writer_gate": {
+      "name": "domain_writer_gate",
+      "version": "1.0.0",
+      "entrypoint": "src/domain_writer_gate.py",
+      "sha256": "aa442f8edb687d98f9ecdcef6994ee549483cab1eea13efaa2adf52c39e0cb65",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "email_bridge": {
+      "name": "email_bridge",
+      "version": "1.0.0",
+      "entrypoint": "src/email_bridge.py",
+      "sha256": "d9b2eb8f69824273b41619292a5bf826851b80d46a77d0de7e029f228e5794f6",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "hooks": {
+      "name": "hooks",
+      "version": "1.0.0",
+      "entrypoint": "src/hooks.py",
+      "sha256": "dcd04e1c9b346581b165f069ce0de5148a37d569f12f815f76172e79ff076922",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "inbox": {
+      "name": "inbox",
+      "version": "1.0.0",
+      "entrypoint": "src/inbox.py",
+      "sha256": "6bb4cec7caa26d289179f531a42d5d957ec90a88f639839ba9429d7ef965b763",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "limits": {
+      "name": "limits",
+      "version": "1.0.0",
+      "entrypoint": "src/limits.py",
+      "sha256": "2226ea57c9f4d78adee2af3cf0f4e717cb42b25668d1f1f53c652aafa771f6b5",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "memory": {
+      "name": "memory",
+      "version": "1.0.0",
+      "entrypoint": "src/memory.py",
+      "sha256": "e478e2f1147de84015cc07347c615e84f9233c5c5183bcfe114ae499ab993cd3",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "message_delivery": {
+      "name": "message_delivery",
+      "version": "1.0.0",
+      "entrypoint": "src/message_delivery.py",
+      "sha256": "c1ad84a23841950c6e2c4548b8521263e1409973fea6874cc2c14b2ab0f5986c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "notify": {
+      "name": "notify",
+      "version": "1.0.0",
+      "entrypoint": "src/notify.py",
+      "sha256": "4979809da222b8601045a4e90add467894d282b1ebd995d35aa1e55979bfaf43",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "plugins": {
+      "name": "plugins",
+      "version": "1.0.0",
+      "entrypoint": "src/plugins.py",
+      "sha256": "34d9db50e7be644685d21f81ff487d08da235df1fa341d8699adf161a3a46dd4",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "prompt": {
+      "name": "prompt",
+      "version": "1.0.0",
+      "entrypoint": "src/prompt.py",
+      "sha256": "c61463c0204d956006cc9c7af23ee12002319c7d0cca1cbee466561954df0893",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "rate_limit_policy": {
+      "name": "rate_limit_policy",
+      "version": "1.0.0",
+      "entrypoint": "src/rate_limit_policy.py",
+      "sha256": "e5549936577a3d6f5fd107aae4084bdd1a6a3a4ff4be39c85a357fcc0ba94dc3",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "scheduler": {
+      "name": "scheduler",
+      "version": "1.0.0",
+      "entrypoint": "src/scheduler.py",
+      "sha256": "d92c1947d9dba0a1eb88ab8622bdb2b4b088e318ae1f50be0473f028eabe0f0b",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "scheduler_provider": {
+      "name": "scheduler_provider",
+      "version": "1.0.0",
+      "entrypoint": "src/scheduler_provider.py",
+      "sha256": "22448391104769cf00c899de2bf7de7204fe5a90773bf6f08aec19550968131c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "session": {
+      "name": "session",
+      "version": "1.0.0",
+      "entrypoint": "src/session.py",
+      "sha256": "75b55bf780a0e76d970e4184b0ccd152a3298ea8dc7e711ac57b03d3b431d507",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "session_checkpoint_adapter": {
+      "name": "session_checkpoint_adapter",
+      "version": "1.0.0",
+      "entrypoint": "src/session_checkpoint_adapter.py",
+      "sha256": "579cbb9e73fe4d7b08f66fa4a842e7c0d2c47a33d161ef297845a5774d3de942",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "session_checkpoint_provider": {
+      "name": "session_checkpoint_provider",
+      "version": "1.0.0",
+      "entrypoint": "src/session_checkpoint_provider.py",
+      "sha256": "69d2a6824c43cea3595a38977c95006d17ee2d8241174df3fa390715662839fd",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "skills": {
+      "name": "skills",
+      "version": "1.0.0",
+      "entrypoint": "src/skills.py",
+      "sha256": "5dca4c1c1a613b3fcda967119bc365df90e16649cf48a892b51ce18ab5c0c5ea",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "telemetry": {
+      "name": "telemetry",
+      "version": "1.0.0",
+      "entrypoint": "src/telemetry.py",
+      "sha256": "a7c9d2b0cfef320740e184aca6f1f0c53353917417497276d63a6a7b11c1a182",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "token_budget": {
+      "name": "token_budget",
+      "version": "1.0.0",
+      "entrypoint": "src/token_budget.py",
+      "sha256": "b475dd8fcd11b3536c15748686ec852798ea4acbf8e11c62826d9da89d772b5c",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "tools": {
+      "name": "tools",
+      "version": "1.0.0",
+      "entrypoint": "src/tools.py",
+      "sha256": "77ca1146e6ef06d77f0289fe4336cb6fcfa5c1e22fbac53d3ff1321265eda94d",
+      "files_count": 4,
+      "selfcontained": true
+    },
+    "worker_policy": {
+      "name": "worker_policy",
+      "version": "1.0.0",
+      "entrypoint": "src/worker_policy.py",
+      "sha256": "e0260a2fd9f1a2ad62c2007e92e4c0f783cfd17d9608dae19b2f6617f771b7c4",
+      "files_count": 4,
+      "selfcontained": true
+    }
+  }
+}
