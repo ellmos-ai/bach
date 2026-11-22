@@ -15,20 +15,25 @@ from hub._services.chat.chat_runtime import ChatSession
 from hub._services.chat.slots_config import initialize_slots_config, add_worker, get_worker_slot, update_slot
 
 
-@pytest.mark.parametrize("backend, tools, code_capability", [
-    ("ollama", ["task_manage"], False),
-    ("ollama-cloud", ["task_manage"], False),
-    ("ollama", ["task_manage", "start_task_worktree"], True),
+@pytest.mark.parametrize("backend, tools, code_capability, custom_prompt", [
+    ("ollama", ["task_manage"], False, None),
+    ("ollama-cloud", ["task_manage"], False, None),
+    ("ollama", ["task_manage", "start_task_worktree"], True, None),
+    ("ollama", ["task_manage"], False, "RESUME_THIS_RUN_ONLY"),
 ])
 def test_explicit_once_scope_precedes_model_dispatch(
-    admission, leased_binding, monkeypatch, backend, tools, code_capability,
+    admission, leased_binding, monkeypatch, backend, tools, code_capability, custom_prompt,
 ):
     from hub import worker_git
     from hub._services.chat import worker_write_guard
 
     control, worker = admission
     update_slot(worker["id"], {"task_id": leased_binding.task_id,
-        "allowed_tools": tools, "allow_tools": True})
+        "allowed_tools": tools, "allow_tools": True, "task_prompt": "STORED_DEFAULT_ASSIGNMENT"})
+    session = ChatSession()
+    session.custom_system_prompt = "System instruction: STORED_DEFAULT_ASSIGNMENT"
+    original_system_prompt = session.custom_system_prompt
+    monkeypatch.setattr(control.runtime, "get_session", lambda *_args: session)
     observed = []
     monkeypatch.setattr(control, "_acquire_worker_task", lambda *_args: leased_binding)
     monkeypatch.setattr(control, "begin_assignment", lambda **kwargs: kwargs)
@@ -44,8 +49,8 @@ def test_explicit_once_scope_precedes_model_dispatch(
         return {"availability": "available", "task_id": task_id,
             "branch": f"refs/heads/bach-task/{task_id}",
             "source_pin": {"verified_public_main": "pinned"} if code_capability else None}
-    async def process(*_args, **_kwargs):
-        observed.append(("model",))
+    async def process(prompt, *_args, **_kwargs):
+        observed.append(("model", prompt, session.custom_system_prompt))
         return "Teilstand ohne Ergebnisabgabe"
     monkeypatch.setattr(worker_git, "start_task_worktree", start)
     monkeypatch.setattr(worker_write_guard, "snapshot_task_start_scope", scope)
@@ -54,7 +59,7 @@ def test_explicit_once_scope_precedes_model_dispatch(
         lambda *_args, **_kwargs: (object(), backend))
 
     response, code = control.start_worker_execution(worker["id"],
-        start_request_id="7" * 32)
+        start_request_id="7" * 32, custom_prompt=custom_prompt)
     assert code in {200, 202} and response["execution"]["worker_thread_started"] is True
     run = control._WORKER_EXECUTIONS[worker["id"]]
     run.thread.join(5)
@@ -66,6 +71,16 @@ def test_explicit_once_scope_precedes_model_dispatch(
     assert observed[0][2]["require_task_binding"] is True
     assert observed[0][2]["task_code_capability"] is code_capability
     assert leased_binding._client.task_result_snapshot(leased_binding.task_id)["result"] is None
+    _, model_prompt, system_prompt = observed[-1]
+    if custom_prompt:
+        assert custom_prompt in model_prompt
+        assert custom_prompt not in system_prompt
+        assert "STORED_DEFAULT_ASSIGNMENT" not in system_prompt
+        assert system_prompt
+    else:
+        assert system_prompt == original_system_prompt
+    assert session.custom_system_prompt == original_system_prompt
+    assert get_worker_slot(worker["id"])["task_prompt"] == "STORED_DEFAULT_ASSIGNMENT"
 
 
 @pytest.mark.parametrize("failure", ["start", "scope"])
