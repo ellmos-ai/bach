@@ -45,6 +45,16 @@ _TEST_HOME = _TEST_DB_DIR / "home"
 _TEST_HOME.mkdir()
 os.environ["HOME"] = str(_TEST_HOME)
 os.environ["USERPROFILE"] = str(_TEST_HOME)
+# Read-only host tool that worker_write_guard finds under the real home on macOS
+# (~/services/lock-master). Name it explicitly, so the isolated home does not
+# hide it; tests that need a fake scanner still set the variable themselves.
+if sys.platform == "darwin" and not (os.environ.get("BACH_LOCK_SCAN")
+                                     or os.environ.get("BACH_HARVEST_LOCK_SCAN")):
+    for _scanner in (_REAL_HOME / "services" / "lock-master" / "pure-locking" / "lock_scan.py",
+                     _REAL_HOME / "services" / "lock-master" / "lock_scan.py"):
+        if _scanner.is_file():
+            os.environ["BACH_LOCK_SCAN"] = str(_scanner)
+            break
 
 import pytest
 from tests._test_process_guard.native_scheduler_gate import guard_native_gate
