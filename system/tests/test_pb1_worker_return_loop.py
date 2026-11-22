@@ -446,6 +446,20 @@ def test_local_wip_commits_without_push_and_leaves_the_tree_clean(local_task_tre
     assert "lokal" in binding.task_snapshot()["description"]
 
 
+def test_wip_refuses_runtime_data_in_the_task_tree(local_task_tree):
+    """SEC-bach-rescue-tag-2026-11-22: no blanket ``git add -A`` of data paths."""
+    from hub import worker_git
+    binding, target = local_task_tree
+    (target / "system" / "data").mkdir(parents=True)
+    (target / "system" / "data" / "abo_export.csv").write_text("anbieter;betrag\n", encoding="utf-8")
+    before = _git_out(target, "rev-parse", "HEAD")
+    result = worker_git.finish_task(binding.task_id, "wip", is_wip=True, run_tests=False,
+                                    worker_task_binding=binding, push=False)
+    assert result["success"] is False and "Datenpfade" in result["error"]
+    assert _git_out(target, "rev-parse", "HEAD") == before
+    assert _git_out(target, "diff", "--cached", "--name-only") == ""
+
+
 def test_controller_secures_worktree_wip_before_a_return(local_task_tree, monkeypatch):
     from types import SimpleNamespace
     control = _controller()

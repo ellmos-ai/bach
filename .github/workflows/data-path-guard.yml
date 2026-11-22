@@ -1,0 +1,33 @@
+name: data-path-guard
+
+# SEC-bach-rescue-tag-2026-11-22: runtime data (databases, exports, chat dumps,
+# user decisions, mail rules, *.bak, data/temp/**) must never reach this public
+# repository. Fails every PR or main push that adds or changes such a path,
+# whichever agent or tool produced it. Rules: system/hub/data_path_guard.py.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  data-path-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Datenpfade im PR-Diff verweigern
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}"
+          python3 system/hub/data_path_guard.py --base "origin/${{ github.base_ref }}"
+
+      - name: Datenpfade im main-Push verweigern
+        if: github.event_name == 'push'
+        run: python3 system/hub/data_path_guard.py --base "${{ github.event.before }}"

@@ -392,3 +392,25 @@ desktop-installers/
 
 # Abo-CSV-Export mit Nutzerdaten (bach abo export)
 /system/data/abo_export.csv
+# SEC-bach-rescue-tag-2026-11-22: runtime data that leaked through a git add -A
+# snapshot of the Mac live tree. Second line of defence: system/hub/data_path_guard.py
+# (worker staging + CI workflow data-path-guard.yml).
+/data/
+/exports/
+/TO-DECIDE-USER*.txt
+/system/data/*.csv
+/system/data/*.pre-*
+/system/data/inbox_*
+/system/data/*export*
+**/.pytest_tmp/
+/system/staging/**/backup/
+*.bak
+*.bak.*
+*.db
+*.sqlite
+*.sqlite3
+/system/scripts/*_output.txt
+/system/scripts/out*.txt
+*dump*.txt
+*dump*.json
+/system/C:*
