@@ -291,13 +291,13 @@ def enroll_task_repository(client, task_id, *, repository, task_version, source_
         source = physical_source(binding)
         if source != source_clone_path(repository, source_sha):
             raise RepositoryBindingError("Sourceowner bestätigt nicht den kanonischen Clonepfad")
-        from .worker_write_guard import _scan_locks
+        from .worker_write_guard import _scan_locks, has_blocking_hook_guards
         def source_fences():
             # The canonical scanner accepts directories. Scanning the registry
             # parent also observes locks protecting this existing file.
             for target in (path.parent, source):
                 observed = _scan_locks(target)
-                if observed.get("hook_guards") != []:
+                if has_blocking_hook_guards(observed, target):
                     raise RepositoryBindingError("Sourcefence-Scan ist unvollständig")
         source_fences()
         if marker.exists():
@@ -421,9 +421,9 @@ class _RegistryWriter:
             raise
 
     def check_fences(self):
-        from .worker_write_guard import _scan_locks
+        from .worker_write_guard import _scan_locks, has_blocking_hook_guards
         try:
-            if _scan_locks(self.path.parent).get("hook_guards") != []:
+            if has_blocking_hook_guards(_scan_locks(self.path.parent), self.path.parent):
                 raise ValueError
         except Exception:
             raise RepositoryBindingError("Native Registry-Sperrprüfung nicht bestätigt",
@@ -562,7 +562,7 @@ def enroll_review_task_repository(client, review_task_id, *, task_version,
     """
     from hub import worker_git
     from hub._services import worker_result_review as review
-    from .worker_write_guard import _scan_locks
+    from .worker_write_guard import _scan_locks, has_blocking_hook_guards
     tid = canonical_task_id(review_task_id)
     if (type(task_version) is not str or re.fullmatch(r"[0-9a-f]{64}", task_version) is None
             or type(operator) is not str
@@ -598,7 +598,7 @@ def enroll_review_task_repository(client, review_task_id, *, task_version,
                     if source != source_clone_path(repository, parent_binding.source_sha):
                         raise ValueError
                     for path in (writer.path.parent, source):
-                        if _scan_locks(path).get("hook_guards") != []:
+                        if has_blocking_hook_guards(_scan_locks(path), path):
                             raise ValueError
                     proof = worker_git._validate_pinned_source_clone(source, parent_binding, require_current=False)
                     expected = {"schema": "bach.task-public-source.v2", "repository": repository,

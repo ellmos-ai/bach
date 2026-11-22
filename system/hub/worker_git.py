@@ -504,10 +504,11 @@ def _guard_public_source_capacity(bach_root: Path, stage: Path, missing_parents:
         result = subprocess.run(_darwin_hydrate_argv(cmd, run_fn=subprocess.run),
                                 cwd=str(bach_root), capture_output=True, text=True, encoding="utf-8",
                                 stdin=subprocess.DEVNULL, timeout=15, check=False)
+        from hub._services.chat.worker_write_guard import has_blocking_hook_guards
         receipt = json.loads(result.stdout)
         if (result.returncode != 0 or receipt.get("checked") != str(bach_root)
                 or receipt.get("descendants_complete") is not True
-                or receipt.get("locks") != [] or receipt.get("hook_guards") != []
+                or receipt.get("locks") != [] or has_blocking_hook_guards(receipt, bach_root)
                 or receipt.get("twin_status") not in {"ok", "not-applicable"}
                 or config_path.read_bytes() != config_bytes):
             raise RuntimeError("Sperrscan mit Verzeichnisreserve für den Public-Source-Clone nicht bestätigt")

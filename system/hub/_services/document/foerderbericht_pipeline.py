@@ -2,9 +2,15 @@
 # -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 """
-Foerderbericht End-to-End Pipeline.
+Foerderbericht End-to-End Pipeline (DEPRECATED seit PB-27 / T-20261107-127118483).
 Version: 1.0.0
 Erstellt: 2026-03-11
+
+VERALTET (PB-27): Die persoenliche/fachspezifische Foerderbericht-Orchestrierung
+liegt im privaten Repository `foerderplaner` (`foerderplaner.provider_contract.v1` /
+`ellmos.report-provider.v1`). Im oeffentlichen BACH-Kern verbleiben ausschliesslich
+die generischen Berichtswerkzeuge (`word_template_service`, `anonymizer_service`,
+`report_provider_contract`, `report_provider_adapter`).
 
 Orchestriert bestehende Services zu einer vollautomatischen Pipeline:
 data_roh/ -> data_ano/ -> data_bundled/ -> output_berichte/
@@ -34,10 +40,14 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
+
+DEPRECATED = True
+DEPRECATION_REPLACEMENT = "foerderplaner.provider_contract.v1"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -251,6 +261,12 @@ class FoerderberichtPipeline:
             base_path: Basis-Ordner (.../Berichte/). Wird aus bach_paths ermittelt
                        falls nicht angegeben.
         """
+        warnings.warn(
+            "FoerderberichtPipeline in bach ist veraltet (PB-27); bitte den "
+            "externen Provider 'foerderplaner' (foerderplaner.provider_contract.v1) nutzen.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if base_path:
             self.base_path = Path(base_path)
         else:

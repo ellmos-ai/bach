@@ -87,7 +87,7 @@ class BerichtHandler(BaseHandler):
             return False, (
                 "Usage: bach bericht generate <json-datei> [-t vorlage] [-o output]\n"
                 "  json-datei: Pfad zur bericht_data.json\n"
-                "  -t: Word-Vorlage (optional, Standard: Berichtsvorlage Geiger universal.docx)\n"
+                "  -t: Word-Vorlage (optional, Standard: bericht_template_universal.docx)\n"
                 "  -o: Ausgabedatei (erforderlich)"
             )
 
