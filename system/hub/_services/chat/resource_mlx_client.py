@@ -1,3 +1,4 @@
+# BACH Adapter: ocean_mlx_resource_client
 # SPDX-License-Identifier: MIT
 """BACH text calls through the owned, in-process Ocean MLX port."""
 from __future__ import annotations
