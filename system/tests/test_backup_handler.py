@@ -291,6 +291,44 @@ class TestBackupManager:
         assert manager.backups_dir.exists()
         assert manager.snapshots_dir.exists()
 
+    def test_backup_zip_contains_consistent_db_outside_repo(self, tmp_path, monkeypatch):
+        """T-20261122-100577457: Das Zip muss die DB enthalten, auch wenn sie
+        ausserhalb des Repos liegt und ihre juengsten Zeilen noch im WAL stehen."""
+        from tools import backup_manager
+
+        db_path = tmp_path / "home" / ".bach" / "bach.db"
+        db_path.parent.mkdir(parents=True)
+        live = sqlite3.connect(str(db_path))  # bleibt offen: WAL nicht eingecheckt
+        live.execute("PRAGMA journal_mode=WAL")
+        live.execute("CREATE TABLE system_config (key TEXT PRIMARY KEY, value TEXT)")
+        live.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT)")
+        live.execute("CREATE TABLE only_in_full_db (x TEXT)")
+        live.execute("INSERT INTO tasks (title) VALUES ('im-wal')")
+        live.execute("INSERT INTO only_in_full_db VALUES ('steuer')")
+        live.commit()
+
+        monkeypatch.setattr(backup_manager, "DB_PATH", db_path)
+        monkeypatch.setattr(backup_manager, "BACKUPS_DIR", tmp_path / "backups")
+        monkeypatch.setattr(backup_manager, "SNAPSHOTS_DIR", tmp_path / "snap")
+        monkeypatch.setattr(backup_manager, "MEMORY_DIR", tmp_path / "no_memory")
+        monkeypatch.setattr(backup_manager, "LOGS_DIR", tmp_path / "no_logs")
+        monkeypatch.setattr(backup_manager, "USER_DIR", tmp_path / "no_user")
+
+        ok, zip_str = backup_manager.BackupManager().create_backup()
+        live.close()
+
+        assert ok, zip_str
+        with zipfile.ZipFile(zip_str) as zf:
+            assert "data/bach.db" in zf.namelist()
+            zf.extract("data/bach.db", tmp_path / "restored")
+        restored = sqlite3.connect(str(tmp_path / "restored" / "data" / "bach.db"))
+        try:
+            assert restored.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+            assert restored.execute("SELECT title FROM tasks").fetchone()[0] == "im-wal"
+            assert restored.execute("SELECT x FROM only_in_full_db").fetchone()[0] == "steuer"
+        finally:
+            restored.close()
+
     def test_headless_backup_uses_canonical_local_directory(self, tmp_path, monkeypatch):
         from gui.api import headless
 

@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: MIT
 """
 Tool: backup_manager
-Version: 1.1.0
+Version: 1.2.0
 Author: BACH Team
 Created: 2026-02-08
-Updated: 2026-07-19
+Updated: 2026-11-22
 Anthropic-Compatible: True
 
 VERSIONS-HINWEIS: Prüfe auf neuere Versionen mit: bach tools version backup_manager
@@ -33,6 +33,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -67,6 +68,7 @@ class BackupManager:
         self.db_path = DB_PATH
         self.backups_dir = BACKUPS_DIR
         self.snapshots_dir = SNAPSHOTS_DIR
+        self._db_tmp: Optional[Path] = None
         self._ensure_dirs()
         self.nas_path = self._get_nas_path()
     
@@ -129,6 +131,14 @@ class BackupManager:
                 zf.writestr("db_export.json", json.dumps(db_export, indent=2, ensure_ascii=False))
                 manifest["contents"].append("db_export.json")
                 
+                # 2b. Komplette DB-Datei (db_export.json deckt nur 6 Tabellen ab).
+                # Fail-closed: scheitert der Snapshot, scheitert das ganze Backup.
+                if self.db_path.exists():
+                    print("  -> Sichere Datenbank-Datei (SQLite-Backup-API)...")
+                    db_tmp = self._snapshot_db()
+                    zf.write(db_tmp, "data/bach.db")
+                    manifest["contents"].append("data/bach.db")
+
                 # 3. Memory-Verzeichnis
                 if MEMORY_DIR.exists():
                     print("  -> Sichere Memory...")
@@ -177,8 +187,37 @@ class BackupManager:
             
         except Exception as e:
             print(f"\n  [ERR] Fehler: {e}")
+            zip_path.unlink(missing_ok=True)  # kein halbes Backup stehen lassen
             return False, str(e)
-    
+        finally:
+            if self._db_tmp is not None:
+                self._db_tmp.unlink(missing_ok=True)
+                self._db_tmp = None
+
+    def _snapshot_db(self) -> Path:
+        """Konsistente DB-Kopie per SQLite-Backup-API (WAL-sicher) neben dem Zip.
+
+        Eine Dateikopie verliert Zeilen aus dem WAL; die Backup-API nicht.
+        Integritaet wird an der Kopie geprueft.
+        ponytail: integrity_check liest die ganze DB (~Sekunden pro 100 MB),
+        quick_check waere schneller, wenn das je stoert.
+        """
+        fd, name = tempfile.mkstemp(prefix=".db_snapshot_", suffix=".db",
+                                    dir=self.backups_dir)
+        os.close(fd)
+        self._db_tmp = Path(name)
+        src = sqlite3.connect(self.db_path)
+        dst = sqlite3.connect(self._db_tmp)
+        try:
+            src.backup(dst)
+            result = dst.execute("PRAGMA integrity_check").fetchone()[0]
+            if result != "ok":
+                raise RuntimeError(f"DB-Snapshot defekt: integrity_check={result}")
+        finally:
+            dst.close()
+            src.close()
+        return self._db_tmp
+
     def _export_user_tables(self) -> Dict:
         """Exportiert User-Tabellen aus der Datenbank."""
         export = {}
