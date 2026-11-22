@@ -22,20 +22,43 @@ Testmodule die betroffenen Module importieren. Die Suite erzwingt ihre privaten
 Pfade; geerbte Shell- oder CI-Werte duerfen nie auf Produktivdaten zeigen.
 """
 
-import atexit
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-import warnings
 from pathlib import Path
+
+_TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
+
+# HOME-Isolation (T-20261122-421847637): rund 65 Stellen im Code loesen
+# ``Path.home() / ".bach"`` direkt auf, an den Env-Vars unten vorbei. Die Suite
+# laeuft deshalb gegen ein eigenes, leeres Heimverzeichnis; auch Subprozesse
+# erben es. Das echte ~/.bach (``_REAL_HOME``) erreicht ein Test dann nur noch
+# ueber einen absoluten Pfad, und genau das prueft ``_guard_production_bach_dir``.
+# Vorher meldete der Waechter auf dem Mac bei jedem Lauf, dass der Live-Dienst
+# ~/.bach/chat/slots_config.json alle 6-12 s neu schreibt.
+# Muss vor jedem weiteren Import stehen, der ``Path.home()`` auswerten koennte.
+_REAL_HOME = Path.home()
+_TEST_HOME = _TEST_DB_DIR / "home"
+_TEST_HOME.mkdir()
+os.environ["HOME"] = str(_TEST_HOME)
+os.environ["USERPROFILE"] = str(_TEST_HOME)
+# Read-only host tool that worker_write_guard finds under the real home on macOS
+# (~/services/lock-master). Name it explicitly, so the isolated home does not
+# hide it; tests that need a fake scanner still set the variable themselves.
+if sys.platform == "darwin" and not (os.environ.get("BACH_LOCK_SCAN")
+                                     or os.environ.get("BACH_HARVEST_LOCK_SCAN")):
+    for _scanner in (_REAL_HOME / "services" / "lock-master" / "pure-locking" / "lock_scan.py",
+                     _REAL_HOME / "services" / "lock-master" / "lock_scan.py"):
+        if _scanner.is_file():
+            os.environ["BACH_LOCK_SCAN"] = str(_scanner)
+            break
 
 import pytest
 from tests._test_process_guard.native_scheduler_gate import guard_native_gate
 
-_TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="bach_test_db_"))
 _TEST_PROCESS_GUARD_DIR = Path(__file__).resolve().parent / "_test_process_guard"
 sys.dont_write_bytecode = True
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -250,7 +273,7 @@ def _snapshot_home_bach():
     werden uebersprungen: der Waechter soll ein Urteil liefern, nicht den
     ganzen Lauf mit einem Error abbrechen.
     """
-    root = Path.home() / ".bach"
+    root = _HOME_BACH_DIR
     if not root.exists():
         return None
     snapshot = {}
@@ -284,7 +307,7 @@ def _snapshot_home_bach():
 #      Punkt 1 in dieser Lage nichts mehr beweisen kann.
 # --------------------------------------------------------------------------
 
-_HOME_BACH_DIR = Path.home() / ".bach"
+_HOME_BACH_DIR = _REAL_HOME / ".bach"
 _OWN_HOME_WRITES = set()
 
 #: Audit-Events, die eine Datei anlegen/veraendern (open wird gesondert geprueft).
@@ -412,13 +435,10 @@ def _classify_home_writes(own_writes, changed, foreign):
     if not geaendert:
         return False, None
     if foreign:
-        verursacher = ", ".join(f"PID {pid} ({name})" for pid, name in foreign)
-        return False, (
-            f"~/.bach hat sich waehrend des Laufs geaendert: {geaendert}. Dieser "
-            "Testprozess hat dort nicht geschrieben; beim Sitzungsstart liefen "
-            f"bereits fremde BACH-Dienste: {verursacher}. Nicht der Suite "
-            "zugerechnet (T-20260912-679116669)."
-        )
+        # Kein eigener Schreibzugriff und HOME ist isoliert (T-20261122-421847637):
+        # Die Aenderung stammt vom laufenden Dienst. Still bleiben, sonst
+        # stumpft die Meldung bei jedem Mac-Lauf ab (T-20260912-679116669).
+        return False, None
     return True, (
         "Testlauf hat produktives ~/.bach veraendert "
         f"(T-20260902-646684582): {geaendert} -- kein fremder BACH-Dienst lief "
@@ -465,17 +485,6 @@ def _guard_production_bach_dir():
             if before.get(k) != (after or {}).get(k)
         ]
     fail, meldung = _classify_home_writes(_OWN_HOME_WRITES, changed, foreign)
-    if meldung and not fail:
-        # pytest >= 9 zeigt UserWarnings aus dem Teardown einer Session-Scoped-
-        # Fixture nicht mehr in der Warnungs-Summary an (gemessen: 9.0.3,
-        # #1304); ein print waehrend des Teardowns faellt in die fd-Capture.
-        # Selbst atexit+print(file=sys.stderr) stirbt, weil pytest die globalen
-        # Stream-OBJEKTE vor dem Interpreter-Exit schliesst ("I/O operation on
-        # closed file"). Robuster Kanal: os.write direkt auf fd 2 -- der
-        # Deskriptor selbst bleibt bis Prozessende offen. Sichtbar im Terminal
-        # UND im Subprozess-Output (test_home_guard_attribution #1304).
-        atexit.register(os.write, 2, f"[Home-Guard] {meldung}\n".encode("utf-8", "replace"))
-        warnings.warn(meldung, stacklevel=1)
     assert not fail, meldung
 
 
@@ -628,7 +637,7 @@ def isolated_runtime(tmp_path, monkeypatch):
     runtime_dir = tmp_path / "runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
 
-    user_runtime = Path.home() / ".bach" / ".runtime"
+    user_runtime = _HOME_BACH_DIR / ".runtime"
     if user_runtime.exists():
         if user_runtime.is_dir():
             shutil.copytree(user_runtime, runtime_dir, dirs_exist_ok=True)

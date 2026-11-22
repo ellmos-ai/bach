@@ -11,7 +11,7 @@ damit jeder Volllauf rot, ohne dass die Suite etwas angefasst hatte
 
 Diese Tests fixieren die Zurechnung:
 - eigener Schreibzugriff  -> rot, auch wenn nebenher ein Dienst laeuft
-- nur fremder Dienst      -> gruen, mit benannter Warnung
+- nur fremder Dienst      -> gruen und still (HOME ist isoliert, T-20261122-421847637)
 - Aenderung ohne Dienst   -> rot (fail-closed, deckt Subprozesse ab)
 """
 
@@ -40,16 +40,16 @@ def test_eigener_schreibzugriff_ist_rot_auch_wenn_ein_dienst_laeuft():
     assert "bach_secrets.json" in message
 
 
-def test_nur_fremder_dienst_ist_gruen_und_nennt_den_verursacher():
-    """Der gemessene Fehlalarm-Fall vom 2026-09-12."""
+def test_nur_fremder_dienst_ist_gruen_und_still():
+    """Der gemessene Fehlalarm-Fall (2026-09-12, Mac 2026-11-22): HOME ist isoliert,
+    die Aenderung stammt vom laufenden Dienst -- kein Fehler, keine Meldung."""
     fail, message = _classify_home_writes(
         own_writes=set(),
-        changed=["chat_tray.log"],
-        foreign=[(10204, "chat_tray.py")],
+        changed=["chat/slots_config.json"],
+        foreign=[(77122, "hub._services.chat.telegram_chat")],
     )
     assert fail is False
-    assert message is not None
-    assert "10204" in message and "chat_tray" in message
+    assert message is None
 
 
 def test_aenderung_ohne_fremden_dienst_bleibt_rot():
@@ -125,11 +125,12 @@ def test_nur_schreibende_opens_zaehlen():
 # --------------------------------------------------------------------------
 
 def test_waechter_wird_rot_wenn_ein_test_wirklich_nach_home_bach_schreibt(tmp_path):
-    """Der Fehlalarm-Fix darf den Waechter nicht entschaerfen.
+    """Die HOME-Isolation darf den Waechter nicht entschaerfen.
 
-    Laeuft als Subprozess mit umgelenktem HOME/USERPROFILE -- das echte
-    ~/.bach wird dabei nicht angefasst. Der Kindlauf schreibt bewusst nach
-    `Path.home()/".bach"` und MUSS daran scheitern.
+    Laeuft als Subprozess mit umgelenktem HOME/USERPROFILE (``heim``) -- das echte
+    ~/.bach wird dabei nicht angefasst. ``heim`` ist fuer den Kindlauf das
+    "echte" Heim. Der Kindlauf schreibt bewusst per absolutem Pfad dorthin und
+    MUSS daran scheitern; ``Path.home()`` zeigt dort schon auf das Testheim.
     """
     import subprocess
     import sys as _sys
@@ -143,7 +144,8 @@ def test_waechter_wird_rot_wenn_ein_test_wirklich_nach_home_bach_schreibt(tmp_pa
         "from pathlib import Path\n"
         "\n"
         "def test_schreibt():\n"
-        "    ziel = Path.home() / '.bach' / 'probe.txt'\n"
+        f"    assert Path.home() != Path({str(heim)!r})\n"
+        f"    ziel = Path({str(heim)!r}) / '.bach' / 'probe.txt'\n"
         "    ziel.write_text('x', encoding='utf-8')\n",
         encoding="utf-8",
     )
@@ -175,7 +177,7 @@ def test_waechter_bleibt_gruen_wenn_nur_ein_fremder_dienst_schreibt(tmp_path):
 
     Ein fremder Prozess (hier eine Kopie namens chat_tray.py) schreibt
     waehrend des Laufs nach `~/.bach`. Der Kindlauf selbst fasst nichts an
-    und muss deshalb gruen bleiben -- mit benannter Warnung statt Fehler.
+    und muss deshalb gruen und still bleiben (T-20261122-421847637).
     """
     import subprocess
     import sys as _sys
@@ -246,5 +248,14 @@ def test_waechter_bleibt_gruen_wenn_nur_ein_fremder_dienst_schreibt(tmp_path):
 
     ausgabe = lauf.stdout + lauf.stderr
     assert lauf.returncode == 0, f"Fehlalarm ist zurueck:\n{ausgabe}"
-    assert "Nicht der Suite zugerechnet" in ausgabe, ausgabe
-    assert "chat_tray" in ausgabe, ausgabe
+    assert "Home-Guard" not in ausgabe and "~/.bach hat sich" not in ausgabe, ausgabe
+
+
+def test_suite_laeuft_gegen_isoliertes_home():
+    """T-20261122-421847637: Path.home() und HOME zeigen auf das Testheim, nie auf das echte."""
+    from tests import conftest
+
+    assert Path.home() == conftest._TEST_HOME
+    assert os.environ["HOME"] == str(conftest._TEST_HOME)
+    assert Path.home() != conftest._REAL_HOME
+    assert conftest._HOME_BACH_DIR == conftest._REAL_HOME / ".bach"
