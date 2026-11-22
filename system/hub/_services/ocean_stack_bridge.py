@@ -516,6 +516,16 @@ def load_sensation_module() -> Any:
     )
 
 
+def load_credits_core_module() -> Any:
+    """Ocean-Modul credits-core (Kredite/Umschuldung, Finanzbündel ellmos-finance-assist-bundle)."""
+    return _load_module_from_repo(
+        "credits_core_pkg",
+        "credits_core",
+        "credits-core",
+        "src/credits_core/__init__.py",
+    )
+
+
 def load_homecontrol_module() -> Any:
     return _load_module_from_repo(
         "ellmos_homecontrol_hub",
