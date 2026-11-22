@@ -119,4 +119,4 @@ def test_missing_table_gives_migration_hint(tmp_path):
     (base / "data").mkdir(parents=True)
     sqlite3.connect(base / "data" / "bach.db").close()
     ok, msg = KreditHandler(base).handle("list", [])
-    assert not ok and "055_credit_contracts.sql" in msg
+    assert not ok and "bach update migrations run --only 055_credit_contracts.sql" in msg

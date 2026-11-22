@@ -172,7 +172,7 @@ class KreditHandler(BaseHandler):
             return False, f"[ERROR] {exc}"
         except Exception as exc:  # sqlite3.OperationalError: Tabelle fehlt
             if "no such table" in str(exc):
-                return False, "[ERROR] Tabelle credit_contracts fehlt: bach update migrations --only 055_credit_contracts.sql"
+                return False, "[ERROR] Tabelle credit_contracts fehlt: bach update migrations run --only 055_credit_contracts.sql"
             raise
         ops = "\n".join(f"  bach kredit {k:<11} {v}" for k, v in self.get_operations().items())
         return operation == "help", f"=== KREDITE ===\n{ops}"
