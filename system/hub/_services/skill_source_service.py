@@ -488,7 +488,7 @@ def check_write_locks(path: Path) -> None:
         target = target.parent
     # --check-dir already includes all overlapping ancestor and twin locks.
     # Recursively scanning every ancestor also scans unrelated sibling trees.
-    from hub._services.chat.worker_write_guard import _darwin_hydrate_argv
+    from hub._services.chat.worker_write_guard import _darwin_hydrate_argv, has_blocking_hook_guards
     argv = _darwin_hydrate_argv(
         [sys.executable, "-S", str(scanner), "--check-dir", str(target), "--strict", "--json"],
         run_fn=subprocess.run,
@@ -500,9 +500,11 @@ def check_write_locks(path: Path) -> None:
         state = json.loads(result.stdout)
     except (OSError, subprocess.SubprocessError, ValueError, TypeError):
         raise PermissionError("Lock-Status konnte nicht bestätigt werden") from None
-    if (not isinstance(state, dict) or result.returncode != 0
+    if (not isinstance(state, dict)
+            or result.returncode not in (0, 2)
+            or (result.returncode == 2 and not state.get("hook_guards"))
             or state.get("checked") != str(target.resolve())
-            or state.get("locks") != [] or state.get("hook_guards") != []
+            or state.get("locks") != [] or has_blocking_hook_guards(state, target)
             or state.get("descendants_complete") is not True
             or state.get("twin_status") not in {"ok", "not-applicable"}):
         raise PermissionError("Skill-Schreibbereich ist gesperrt oder ungeprüft")

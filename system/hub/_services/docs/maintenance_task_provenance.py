@@ -237,7 +237,7 @@ def _check_source_proof(proof, record, revision):
 
 def _verify_source(intent, *, require_current):
     from hub import worker_git
-    from hub._services.chat.worker_write_guard import _scan_locks
+    from hub._services.chat.worker_write_guard import _scan_locks, has_blocking_hook_guards
     record, revision = intent["repository_record"], intent["revision"]
     binding = registry.RepositoryBinding(1, _REPOSITORY, record["origin"],
                                          record["default_branch"], revision)
@@ -245,7 +245,7 @@ def _verify_source(intent, *, require_current):
         source = worker_git._safe_source_clone_path(binding)
         if source != registry.source_clone_path(_REPOSITORY, revision):
             raise ValueError
-        if _scan_locks(source).get("hook_guards") != []:
+        if has_blocking_hook_guards(_scan_locks(source), source):
             raise ValueError
         proof = worker_git._validate_pinned_source_clone(source, binding, require_current=require_current)
         _check_source_proof(proof, record, revision)

@@ -298,7 +298,7 @@ BERICHTE_CLEAN_DIR = BERICHTE_OUTPUT_DIR               # Alias fuer output_beric
 # ============================================================================
 
 SKILL_TEMPLATES_DIR = SKILLS_DIR / "_templates"
-BERICHT_TEMPLATE = SKILL_TEMPLATES_DIR / "bericht_template_geiger_universal.docx"
+BERICHT_TEMPLATE = SKILL_TEMPLATES_DIR / "bericht_template_universal.docx"
 
 # ============================================================================
 # EXTERNE PFADE (User-spezifisch, können fehlen)

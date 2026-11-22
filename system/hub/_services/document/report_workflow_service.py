@@ -175,16 +175,15 @@ else:
     _SERVICE_DIR = Path(__file__).resolve().parent
     BACH_BASE = _SERVICE_DIR.parent.parent.parent.parent
     BERICHTE_BASE = BACH_BASE / "user" / "documents" / "foerderplaner" / "Berichte"
-    TEMPLATE_PATH = BACH_BASE / "system" / "skills" / "_templates" / "bericht_template_geiger_universal.docx"
+    TEMPLATE_PATH = BACH_BASE / "system" / "skills" / "_templates" / "bericht_template_universal.docx"
     WISSENSDATENBANK = Path.home() / "OneDrive" / "Dokumente" / "_Wissensdatenbank"
 
-ICF_REF_PATH = BACH_BASE / "system" / "agents" / "_experts" / "foerderplaner" / "Kontext" / "ICF-Checker Tabelle_Geiger.docx"
+ICF_REF_PATH = BACH_BASE / "system" / "agents" / "_experts" / "foerderplaner" / "Kontext" / "ICF-Checker_Tabelle.docx"
 
-# Whitelist: Diese Namen werden NICHT anonymisiert
+# Whitelist: Diese generischen Behoerdenbegriffe werden NICHT anonymisiert
 DEFAULT_WHITELIST = [
     "YOUR_NAME",  # User-specific: add names to preserve here
     "Landratsamt", "Jugendamt", "Sozialamt",
-    "Händle", "Frau Händle"
 ]
 
 
@@ -1202,7 +1201,7 @@ Interpersonelle Interaktionen:
             #    einer Drittperson kann zufaellig ein gewoehnliches deutsches
             #    Wort sein (z.B. "Herr" = Anrede "Mr."). Wuerde nur "Herr" allein
             #    gemappt, wuerde JEDES Vorkommen im Dokument ersetzt (auch
-            #    "Herr Geiger", der Therapeut). Nur die komplette erkannte
+            #    "Herr Beispiel", die Fachkraft). Nur die komplette erkannte
             #    Namensphrase wird ersetzt -- weniger Abdeckung, aber sicher.
             #
             # Beide Probleme traten real auf: 178 Drittpersonen-Namen mit der
@@ -1663,7 +1662,7 @@ Interpersonelle Interaktionen:
         kb_context = ""
         if include_wissensdatenbank and WISSENSDATENBANK.exists():
             kb_context = self._search_wissensdatenbank([
-                "ICF", "Autismus", "Foerderplanung", "Methoden"
+                "ICF", "Berichtswesen", "Foerderplanung", "Methoden"
             ])
 
         # Cloud-Weg (Profil mit Ersetzungen): Wissensdatenbank und Zusatzanweisungen laufen durch
@@ -1738,7 +1737,7 @@ WICHTIGE REGELN:
 9. DOKUMENTEN-PRIORISIERUNG (WICHTIG - beachte beim Schreiben!):
    Die Dokumente sind nach Prioritaet sortiert. Gewichte sie beim Schreiben entsprechend:
    HOHE PRIO:   Aktuelle Einzeltherapie-Protokolle, Aktendeckblatt, Hilfeplan, Bewilligungsbescheid
-   MITTLERE PRIO: Berichte von Foerderstellen (z.B. proAutismus), Arztberichte (<10 Jahre),
+   MITTLERE PRIO: Berichte von Foerderstellen (z.B. Fachdienst / Foerderstelle), Arztberichte (<10 Jahre),
                    Schulberichte, E-Mails/Korrespondenz
    NIEDRIGE PRIO: Arztberichte aelter als 10 Jahre, veraltete Gutachten
    - Stuetze den Bericht VORRANGIG auf aktuelle Protokolle und Beobachtungen
@@ -1749,8 +1748,8 @@ WICHTIGE REGELN:
 STAMMDATEN-EXTRAKTION (alle Felder ausfuellen!):
 - name: Den anonymisierten Namen verwenden (wie oben angegeben)
 - geburtsdatum: Aus Aktendeckblatt/Stammdaten
-- landkreis: Aus Kostenzusage/Hilfeplan - "Loerrach" oder "Waldshut"
-- zeichen_amt: Aktenzeichen des Amts (z.B. "51.2.1-XXX")
+- landkreis: Zustaendiger Landkreis bzw. Kostentraeger (aus Kostenzusage/Hilfeplan)
+- zeichen_amt: Aktenzeichen des Amts (z.B. "AZ-0001")
 - foerderungsbeginn: Wann begann die Foerderung bei Foerderstelle? (aus Aktendeckblatt)
 - kostenzusage_ende: Datum Bewilligungsende (dd.mm.yyyy).
   * WICHTIG: Suche nach "Kostenzusage bis...", "befristet bis...", "Ende der Foerderung am..."
@@ -1763,13 +1762,13 @@ STAMMDATEN-EXTRAKTION (alle Felder ausfuellen!):
 - therapeut_gruppe: Name des Gruppentherapeuten (leer wenn nicht vorhanden)
 - kopie_an: Empfaenger fuer Kopien (z.B. Eltern, Schule - aus Hilfeplan)
 - amt_adresse: VOLLSTAENDIGE Adresse des zustaendigen Jugendamts/Aussenstelle
-  * WICHTIG: Loerrach hat mehrere Aussenstellen (Schopfheim, Loerrach-Stadt, etc.)
+  * WICHTIG: Behoerden koennen mehrere Standorte/Aussenstellen haben
   * Suche die EXAKTE Adresse aus Bewilligungsbescheid/Hilfeplan-Briefkopf
-  * Format: "Landratsamt Loerrach\\nJugend & Familie SD IV\\nStrasse Nr\\nPLZ Ort"
+  * Format: "Behoerde Musterkreis\\nFachbereich Jugend & Familie\\nStrasse Nr\\nPLZ Ort"
   * Wenn nicht findbar: leer lassen (Default-Adresse wird verwendet)
 - diagnosen: Fuer JEDE Diagnose erfassen:
-  * icd_code: z.B. "F84.5"
-  * bezeichnung: z.B. "Asperger-Syndrom"
+  * icd_code: z.B. "F00.0"
+  * bezeichnung: z.B. "Synthetische Beispiel-Diagnose"
   * diagnostiker: Wer hat diagnostiziert?
   * datum: Wann? (Jahr oder volles Datum)
   * quelle: Aus welchem Dokument? (z.B. "Bericht vom 12.03.2019")
@@ -1789,9 +1788,9 @@ JSON-SCHEMA (ALLE Felder ausfuellen!):
     "name": "Anonymisierter Name",
     "geburtsdatum": "TT.MM.JJJJ",
     "berichtszeitraum": "TT.MM.JJJJ - TT.MM.JJJJ",
-    "stundenumfang": "75 Minuten woechentlich",
-    "landkreis": "Loerrach oder Waldshut",
-    "zeichen_amt": "Aktenzeichen (z.B. 51.2.1-XXX oder Z1-512.41-...)",
+    "stundenumfang": "Bewilligter Umfang gemaess Kostenzusage",
+    "landkreis": "Zustaendiger Landkreis / Kostentraeger",
+    "zeichen_amt": "Aktenzeichen (z.B. AZ-0001)",
     "kostenzusage_ende": "TT.MM.JJJJ",
     "weiterbewilligung_ab": "TT.MM.JJJJ",
     "foerderungsbeginn": "TT.MM.JJJJ",
@@ -1801,8 +1800,8 @@ JSON-SCHEMA (ALLE Felder ausfuellen!):
     "kopie_an": "Empfaenger fuer Kopie",
     "amt_adresse": "Vollstaendige Adresse des Jugendamts (aus Hilfeplan/Bewilligung)",
     "diagnosen": [{{
-      "icd_code": "F84.5",
-      "bezeichnung": "Asperger-Syndrom",
+      "icd_code": "F00.0",
+      "bezeichnung": "Synthetische Beispiel-Diagnose",
       "diagnostiker": "Dr. Beispiel",
       "datum": "2020",
       "quelle": "Bericht vom 12.03.2020"
@@ -1844,7 +1843,7 @@ JSON-SCHEMA (ALLE Felder ausfuellen!):
   "empfehlung": {{
     "verlaengerung": true,
     "begruendung": ["therapieziele_nicht_erreicht"],
-    "umfang": "Autismusspezifische Einzelfoerderung: 75 Minuten woechentlich",
+    "umfang": "Individuelle Einzelfoerderung gemaess Hilfeplan",
     "sonstige_empfehlung": ""
   }},
   "abschluss": {{

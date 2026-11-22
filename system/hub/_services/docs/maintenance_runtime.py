@@ -221,7 +221,10 @@ class CanonicalLockGuard:
             if existing.is_file():
                 existing = existing.parent
             try:
-                from hub._services.chat.worker_write_guard import _darwin_hydrate_argv
+                from hub._services.chat.worker_write_guard import (
+                    _darwin_hydrate_argv,
+                    has_blocking_hook_guards,
+                )
                 argv = _darwin_hydrate_argv(
                     [sys.executable, "-S", str(self.scanner),
                      "--check-dir", str(existing), "--json"],
@@ -250,7 +253,7 @@ class CanonicalLockGuard:
                 or any(not isinstance(item, dict)
                        or not isinstance(item.get("path"), str)
                        or not Path(item["path"]).is_absolute() for item in locks)
-                or value.get("hook_guards", []) != []
+                or has_blocking_hook_guards(value, existing)
                 or type(result.returncode) is not int
             ):
                 raise PermissionError("maintenance_locked_or_unknown")

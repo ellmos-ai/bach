@@ -236,6 +236,136 @@ def _darwin_hydrate_argv(argv: list[str], *, run_fn, platform_name: str | None =
     return argv
 
 
+_KNOWN_GUARD_HOOKS = frozenset({"pre-push", "pre-commit", "pre-receive"})
+_EMBARGO_HOOK_SIGNATURES = (
+    "build week judging",
+    "buildweek-no-push",
+    "operator competition embargo",
+)
+_RECOGNIZED_GLOBAL_HOOK_MARKERS = (
+    "Global core.hooksPath hides each repo's .git/hooks.",
+    "Host-wide pre-push data gate (SEC-bach-rescue-tag-",
+)
+
+
+def _repo_local_hook_dirs(target: Path) -> list[Path] | None:
+    """Return local Git hook directories for target, or None if target cannot be verified."""
+    cur = _NATIVE_PATH(os.path.abspath(target))
+    while not cur.exists() and cur != cur.parent:
+        cur = cur.parent
+    if cur.is_file():
+        cur = cur.parent
+    if not cur.is_dir():
+        return None
+    for ancestor in (cur, *cur.parents):
+        dot_git = ancestor / ".git"
+        try:
+            if dot_git.is_symlink():
+                return None
+            if dot_git.is_dir():
+                return [dot_git.resolve(strict=True) / "hooks"]
+            if dot_git.is_file():
+                raw = dot_git.read_text(encoding="utf-8", errors="strict").strip()
+                if not raw.startswith("gitdir:"):
+                    return None
+                gitdir_raw = raw.partition(":")[2].strip()
+                if not gitdir_raw:
+                    return None
+                gitdir = _NATIVE_PATH(gitdir_raw)
+                if not gitdir.is_absolute():
+                    gitdir = ancestor / gitdir
+                gitdir = gitdir.resolve(strict=True)
+                dirs = [gitdir / "hooks"]
+                commondir_file = gitdir / "commondir"
+                if commondir_file.is_file():
+                    rel = commondir_file.read_text(encoding="utf-8", errors="strict").strip()
+                    if not rel:
+                        return None
+                    common = _NATIVE_PATH(rel)
+                    if not common.is_absolute():
+                        common = gitdir / common
+                    common = common.resolve(strict=True)
+                    if common / "hooks" not in dirs:
+                        dirs.append(common / "hooks")
+                return dirs
+            if (ancestor / "HEAD").is_file() and (ancestor / "objects").is_dir() and (ancestor / "refs").is_dir():
+                return [ancestor.resolve(strict=True) / "hooks"]
+        except (OSError, UnicodeError, ValueError):
+            return None
+    return []
+
+
+def has_blocking_hook_guards(
+    payload: dict,
+    target_path: Path | str | None = None,
+    *,
+    global_hooks_dir: Path | None = None,
+) -> bool:
+    """Return True unless hook_guards is empty or solely verified non-embargo host global hooks."""
+    if not isinstance(payload, dict):
+        return True
+    guards = payload.get("hook_guards")
+    if not isinstance(guards, list):
+        return True
+    if not guards:
+        return False
+    try:
+        allowed_dir = _NATIVE_PATH(
+            global_hooks_dir if global_hooks_dir is not None else (Path.home() / ".config" / "git" / "hooks")
+        )
+        if allowed_dir.is_symlink() or not allowed_dir.is_dir():
+            return True
+        allowed_resolved = allowed_dir.resolve(strict=True)
+        for item in guards:
+            if not isinstance(item, dict):
+                return True
+            hook_name = item.get("hook")
+            raw_path = item.get("path")
+            if (
+                not isinstance(hook_name, str)
+                or hook_name not in _KNOWN_GUARD_HOOKS
+                or item.get("embargo") is not False
+                or not isinstance(raw_path, str)
+                or not raw_path.strip()
+            ):
+                return True
+            reported = _NATIVE_PATH(raw_path)
+            expected = allowed_resolved / hook_name
+            if (
+                reported.is_symlink()
+                or expected.is_symlink()
+                or not expected.is_file()
+                or reported.resolve(strict=True) != expected
+            ):
+                return True
+            content = expected.read_text(encoding="utf-8", errors="replace")
+            lowered = content.lower()
+            if any(sig in lowered for sig in _EMBARGO_HOOK_SIGNATURES):
+                return True
+            if not any(marker in content for marker in _RECOGNIZED_GLOBAL_HOOK_MARKERS):
+                return True
+    except OSError:
+        return True
+
+    raw_target = target_path if target_path is not None else payload.get("checked")
+    if raw_target is None or (isinstance(raw_target, str) and not raw_target.strip()):
+        return True
+    local_dirs = _repo_local_hook_dirs(_NATIVE_PATH(raw_target))
+    if local_dirs is None:
+        return True
+    for hooks_dir in local_dirs:
+        if hooks_dir.resolve(strict=False) == allowed_resolved:
+            continue
+        for hook_name in _KNOWN_GUARD_HOOKS:
+            candidate = hooks_dir / hook_name
+            try:
+                if candidate.exists() or candidate.is_symlink():
+                    return True
+            except OSError:
+                return True
+    return False
+
+
 def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = None,
                 task_scoped_root: Path | None = None) -> dict:
     scanner = _scanner_path()
@@ -289,7 +419,7 @@ def _scan_locks(path: Path, *, main_repo=False, creation_anchor: Path | None = N
     elif ("descendants_complete" in payload
           and payload.get("descendants_complete") is not True):
         raise WorkerWriteGuardError("Sperrscan ist unvollständig")
-    if "hook_guards" in payload and payload.get("hook_guards") != []:
+    if "hook_guards" in payload and has_blocking_hook_guards(payload, creation_anchor or path):
         raise WorkerWriteGuardError("Sperrscan ist unvollständig oder ein Hook-Guard blockiert")
     locks = payload.get("locks")
     if not isinstance(locks, list) or locks:
