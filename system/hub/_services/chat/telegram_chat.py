@@ -2298,8 +2298,9 @@ def _secure_context_wip(control, worker_session, reason):
     )
     if target.exists():
         result = worker_git.finish_task(
-            binding.task_id, f"Kontextgrenze: {reason}", is_wip=True, run_tests=False,
-            worker_task_binding=binding, result_annotation=annotation, needs_split=True)
+            binding.task_id, f"[WIP] [task {binding.task_id}] Kontextgrenze: {reason}", is_wip=True,
+            run_tests=False, worker_task_binding=binding, result_annotation=annotation, needs_split=True,
+            push=False)
     else:
         binding.record_worktree_result(binding.task_id, annotation, needs_split=True)
         result = {"success": True, "wip": False, "needs_split": True, "status": "needs_split"}

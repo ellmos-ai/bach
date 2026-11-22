@@ -207,7 +207,10 @@ def test_bound_wip_updates_content_version_and_keeps_lease(bridge, git_run, tmp_
     assert not decoy.exists()
     snapshot = bridge.binding.task_snapshot()
     assert snapshot["task_version"] != before
-    assert "[WIP] Stand auf bach-task/" in snapshot["description"]
+    assert "[WIP] Stand lokal auf bach-task/" in snapshot["description"]
+    assert result["status"] == "wip_committed"
+    # SEC-bach-rescue-tag-2026-11-22: WIP never pushes, even with the default push=True.
+    assert not any(cmd[:2] == ["git", "push"] for cmd in git_run)
     assert bridge.binding._client.task_snapshot(bridge.binding.task_id)["status"] == "in_progress"
     assert not bridge.binding.closed
     bridge.binding.assert_active()
@@ -241,14 +244,14 @@ def test_finish_tool_forwards_private_binding(bridge, monkeypatch):
     assert calls[0][1]["require_task_binding"] is True
 
 
-def test_wip_failed_push_does_not_claim_canonical_receipt(bridge, git_run, monkeypatch):
+def test_wip_failed_commit_does_not_claim_canonical_receipt(bridge, git_run, monkeypatch):
     before = bridge.binding.task_snapshot()["task_version"]
     original = worker_git.subprocess.run
-    def failed_push(cmd, **kwargs):
+    def failed_commit(cmd, **kwargs):
         result = original(cmd, **kwargs)
-        if cmd[:2] == ["git", "push"]: result.returncode = 1
+        if cmd[:2] == ["git", "commit"]: result.returncode = 1
         return result
-    monkeypatch.setattr(worker_git.subprocess, "run", failed_push)
+    monkeypatch.setattr(worker_git.subprocess, "run", failed_commit)
     result = worker_git.finish_task(bridge.binding.task_id, "WIP", is_wip=True,
                                    worker_task_binding=bridge.binding, require_task_binding=True)
     assert result["success"] is False
