@@ -87,6 +87,15 @@ Statt starrer Produkt-Forks trennt die Architektur sauber zwischen **individuell
 | Abgeschlossene Meilensteine | [→ ## Abgeschlossene Meilensteine](#abgeschlossene-meilensteine) |
 | Changelog (komprimiert) | [→ ## Changelog (komprimiert)](#changelog-komprimiert) *(ältere Historie; aktuellste 4.3.64 bleibt aktiv)* |
 
+## Review 2026-11-14 (Abend-Lauf: BACH TASKS UND DEV - Gemini 4 Hydrogen)
+
+Abgeschlossene Tasks (`Task #-61`, `Task #-62`, `Task #-63`):
+
+- **Task #-61 (GUI & PromptBoard: Board-Runner Sequenz-/Batch-Ausführung & Live-Tray-Refresh):** `GET /api/prompt-library/boards/{board_ref}` (`system/gui/server.py`), Button `▶ Board starten` in `prompt-library.html`, Sequenz-/Batch-Runner-Banner (`#chat-board-runner` mit Pause/Weiter/Nächster/Abbrechen + entferntem doppelten `loadLibraryDraft()`-Aufruf) in `chat.html`, sowie `▶💬 Gesamtes Board im Web-Chat starten` und DB-/Datei-Signatur-basierter Live-Tray-Refresh (`_prompt_db_signature()`, `_check_prompt_boards_refresh()`) in `chat_tray.py`.
+- **Task #-62 (Einheitliche Self-Update-Orchestrierung `bach update stack`):** `ModulesHandler.run_stack_update()` (`system/hub/modules.py`), `bach update stack` / `bach modules stack-update` (`system/hub/update.py`, `system/hub/modules.py`) sowie `POST /api/modules/stack-update` (`system/gui/server.py`) für durchgängige Verkettung von Feeds-Sync, Modul-Auto-Update, `ocean_stack_bridge`-Hot-Wiring und striktem Drift-/Dependency-Check.
+- **Task #-63 (Legacy-Kandidaten-Audit & Standalone-Export `permissions, config, backup, connector`):** `ModulesHandler.audit_legacy_candidates()` (`bach modules audit-legacy [--json]`) sowie Export und Hot-Wiring von 4 neuen self-contained Modulen unter `.MODULES/{permissions,config,backup,connector}` (inkl. `manifest.json`, `tests/` und `ocean_stack_bridge.py`-Bindung) mit aktualisiertem `.MODULES/modules.lock.json`. Stand: **34 / 34 Standalone-Module (100,0 %)**, **0 Drift**.
+- **Neue Folge-Aufgaben angelegt:** `Task #-64` (Board-Runner Session-Historie & Stop-on-Error Option), `Task #-65` (Legacy-Handler direkte Delegation an Standalone-Module `permissions, config, backup, connector`), `Task #-66` (Manifest-Feed Checksum-Verifikation & Minimal Core-Installer-E2E).
+
 ## Review 2026-11-14 (Mittags-Lauf: BACH TASKS UND DEV - Gemini 4 Hydrogen)
 
 Automatisierter Lauf (BACH TASKS UND DEV). Befund, erledigte Roadmap-Ziele und Status:

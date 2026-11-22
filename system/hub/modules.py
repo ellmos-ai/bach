@@ -130,6 +130,8 @@ class ModulesHandler(BaseHandler):
             "drift": "Alias für 'telemetry': Prüft Checksum-, Versions- und Dependency-Drift (mit --strict als CI-Gate)",
             "auto-export": "Auto-Export & Multi-Repo-Sync für geänderte Standalone-Module (bach modules auto-export [--apply] [--pull-newer] [--bundle-deps] [--out DIR])",
             "sync-repos": "Alias für 'auto-export': Synchronisiert und exportiert Module + Manifest-Feed (mit --pull-newer auch Import neuerer Repo-Stände)",
+            "stack-update": "Einheitliche Self-Update-Orchestrierung: Feeds, Module, Hot-Wiring & Drift-Check (bach modules stack-update [--dry-run] [--strict] [--pull-newer])",
+            "audit-legacy": "Audit verbleibender In-Tree-Legacy-Services (permissions, config, backup, connector) auf Standalone-Export & Hot-Wiring",
             "schedule": "Auto-Update-Job im Daemon Scheduler registrieren/konfigurieren (bach modules schedule [--interval-hours N])",
             "wire": "Hot-Wiring für alle Standalone-Module ausführen",
             "help": "Hilfe anzeigen",
@@ -252,11 +254,241 @@ class ModulesHandler(BaseHandler):
             return self._telemetry_cli(args)
         elif op in ("auto-export", "auto_export", "sync-repos", "sync_repos"):
             return self._auto_export_cli(args, dry_run=dry_run)
+        elif op in ("stack-update", "stack_update"):
+            return self._stack_update_cli(args, dry_run=dry_run)
+        elif op in ("audit-legacy", "audit_legacy", "legacy-audit"):
+            return self._audit_legacy_cli(args)
         elif op == "help":
             return self._help()
         else:
             ops = ", ".join(self.get_operations().keys())
             return False, f"Unbekannte Operation '{operation}'. Verfügbar: {ops}"
+
+    # -------------------------------------------------------------------------
+    # STACK ORCHESTRATION (Task -62) & LEGACY AUDIT (Task -63)
+    # -------------------------------------------------------------------------
+
+    def run_stack_update(
+        self,
+        apply_updates: bool = True,
+        dry_run: bool = False,
+        strict: bool = False,
+        pull_newer: bool = False,
+        respect_lock: bool = False,
+    ) -> Tuple[bool, Dict[str, Any]]:
+        """Führt Feeds-Sync, Modul-Updates, Hot-Wiring und Drift-Prüfung als Kette aus."""
+        repo_sync: Optional[Dict[str, Any]] = None
+        if pull_newer:
+            repo_sync = self.sync_repos(dry_run=dry_run, pull_newer=True)
+
+        if dry_run:
+            feeds_sync: Dict[str, Any] = {
+                "feeds_count": len(self.get_feeds()),
+                "modules_count": len(self.get_feed_modules()),
+                "skipped_dry_run": True,
+            }
+        else:
+            feeds_sync = self.sync_feeds()
+
+        check = self.check_for_updates()
+        cycle_ok, cycle_msg = self._auto_update_cycle(
+            apply_updates=(apply_updates and not dry_run),
+            dry_run=dry_run,
+            sync_feeds_first=False,
+            respect_lock=respect_lock,
+        )
+
+        wiring: Dict[str, Any]
+        try:
+            from hub._services.ocean_stack_bridge import auto_switch_to_standalone_modules
+            wiring = auto_switch_to_standalone_modules()
+        except Exception as exc:
+            wiring = {"total_switched": 0, "error": str(exc)}
+
+        telemetry = self.get_telemetry_and_drift_report()
+        summary = telemetry.get("summary", {})
+        drift_count = (
+            int(summary.get("checksum_drift_count", 0))
+            + int(summary.get("version_drift_count", 0))
+            + int(summary.get("unlocked_count", 0))
+        )
+        missing_deps_count = int(summary.get("missing_deps_count", 0))
+        cycle_failed = 0 if cycle_ok else 1
+        repo_errors = int((repo_sync or {}).get("errors_count", 0))
+        drift_failed = bool(strict and (drift_count > 0 or missing_deps_count > 0))
+        ok = (cycle_failed == 0 and repo_errors == 0 and not drift_failed)
+
+        updates_found = list(check.get("updates", []))
+        update_cycle_data: Dict[str, Any] = {
+            "ok": cycle_ok,
+            "updates_found": updates_found,
+            "applied": ([] if (dry_run or not apply_updates or not cycle_ok) else updates_found),
+            "blocked": list(check.get("blocked", [])),
+            "failed": ([] if cycle_ok else [{"error": cycle_msg}]),
+            "message": cycle_msg,
+        }
+
+        report: Dict[str, Any] = {
+            "schema": "bach.stack-update.v1",
+            "timestamp": datetime.now().isoformat(),
+            "ok": ok,
+            "dry_run": dry_run,
+            "strict": strict,
+            "pull_newer": pull_newer,
+            "respect_lock": respect_lock,
+            "feeds_sync": feeds_sync,
+            "repo_sync": repo_sync,
+            "update_cycle": update_cycle_data,
+            "wiring": {
+                "total_switched": int(wiring.get("total_switched", 0)),
+                "error": wiring.get("error"),
+            },
+            "drift_count": drift_count,
+            "missing_deps_count": missing_deps_count,
+            "telemetry_summary": summary,
+        }
+        return ok, report
+
+    def _stack_update_cli(self, args: list, dry_run: bool = False) -> Tuple[bool, str]:
+        is_dry = dry_run or ("--dry-run" in args)
+        is_strict = "--strict" in args
+        pull_newer = "--pull-newer" in args
+        respect_lock = "--respect-lock" in args
+        as_json = "--json" in args
+        ok, report = self.run_stack_update(
+            apply_updates=not is_dry,
+            dry_run=is_dry,
+            strict=is_strict,
+            pull_newer=pull_newer,
+            respect_lock=respect_lock,
+        )
+        if as_json:
+            return ok, json.dumps(report, indent=2, ensure_ascii=False)
+        cyc = report["update_cycle"]
+        lines = [
+            "BACH STACK UPDATE ORCHESTRATOR",
+            "=" * 50,
+            f"Modus:      {'DRY-RUN' if is_dry else 'APPLY'} | Strict: {is_strict}",
+            f"Feeds:      {report['feeds_sync'].get('feeds_count', 0)} Feeds ({report['feeds_sync'].get('modules_count', 0)} Einträge)",
+            f"Updates:    {len(cyc.get('updates_found', []))} gefunden | {len(cyc.get('applied', []))} angewendet | {len(cyc.get('failed', []))} Fehler",
+            f"Hot-Wiring: {report['wiring'].get('total_switched', 0)} Standalone-Module aktiv",
+            f"Drift/Deps: drift={report['drift_count']} | missing_deps={report['missing_deps_count']}",
+            f"Ergebnis:   {'[OK] Stack konsistent' if ok else '[WARN/FAIL] Prüfbedarf erkannt'}",
+        ]
+        return ok, "\n".join(lines)
+
+    def audit_legacy_candidates(self, candidates: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Systematisches Audit verbleibender In-Tree-Services auf Standalone-Export und Hot-Wiring."""
+        targets = candidates or ["permissions", "config", "backup", "connector"]
+        hub_dir = self.base_path / "hub"
+
+        detection: Dict[str, Any] = {}
+        bridge_status: Dict[str, Any] = {}
+        try:
+            from hub._services.ocean_stack_bridge import (
+                detect_legacy_in_tree_services,
+                ocean_modularized_services_status,
+            )
+            detection = detect_legacy_in_tree_services()
+            bridge_status = ocean_modularized_services_status()
+        except Exception:
+            pass
+
+        in_tree_all = list(detection.get("switched_services", [])) + list(detection.get("legacy_services", []))
+        installed_map = {m["name"]: m for m in self.get_modules_data()}
+
+        candidate_files_map = {
+            "permissions": ["claude_permissions.py"],
+            "config": ["_services/config.py", "_services/user_config_store.py", "_services/chat/local_provider_config.py", "partner_config_manager.py"],
+            "backup": ["backup.py"],
+            "connector": ["connector.py"],
+        }
+
+        results: List[Dict[str, Any]] = []
+        for cand in targets:
+            key = str(cand).strip().lower()
+            mod_info = installed_map.get(key)
+            b_info = bridge_status.get(key, {})
+            matched_files = []
+            for rel_f in candidate_files_map.get(key, [f"{key}.py"]):
+                p = hub_dir / rel_f
+                if p.is_file():
+                    text = p.read_text(encoding="utf-8", errors="ignore")
+                    matched_files.append({
+                        "file": rel_f,
+                        "lines": len(text.splitlines()),
+                        "has_deprecation_decorator": "deprecated_legacy_bach" in text,
+                        "uses_sqlite_or_hub_db": ("sqlite3" in text or "get_bach_db" in text or "hub.db" in text),
+                    })
+            if not matched_files:
+                for item in in_tree_all:
+                    if item.get("standalone_name") == key or item.get("name") == key:
+                        matched_files.append({
+                            "file": item.get("file"),
+                            "lines": None,
+                            "has_deprecation_decorator": False,
+                            "uses_sqlite_or_hub_db": None,
+                        })
+
+            standalone_bound = bool(b_info.get("standalone"))
+            has_module_pkg = bool(mod_info and mod_info.get("selfcontained"))
+            has_db_coupling = any(f.get("uses_sqlite_or_hub_db") for f in matched_files)
+            if standalone_bound and has_module_pkg:
+                readiness = "standalone_bound"
+            elif has_module_pkg:
+                readiness = "exported_needs_wiring"
+            elif not has_db_coupling:
+                readiness = "ready_for_export"
+            else:
+                readiness = "extract_pure_core_needed"
+
+            results.append({
+                "candidate": key,
+                "readiness": readiness,
+                "has_standalone_module": has_module_pkg,
+                "module_version": (mod_info or {}).get("version"),
+                "bridge_bound_standalone": standalone_bound,
+                "legacy_files": matched_files,
+                "recommended_action": (
+                    "Bereits als Standalone-Modul exportiert und hot-wired"
+                    if readiness == "standalone_bound"
+                    else f"Standalone-Modul unter .MODULES/{key} exportieren und in ocean_stack_bridge.py registrieren"
+                ),
+            })
+
+        bound_count = sum(1 for r in results if r["readiness"] == "standalone_bound")
+        return {
+            "schema": "bach.legacy-candidates-audit.v1",
+            "timestamp": datetime.now().isoformat(),
+            "targets": targets,
+            "total_audited": len(results),
+            "standalone_bound_count": bound_count,
+            "legacy_in_tree_summary": {
+                "total_in_tree_services": detection.get("total_in_tree_services", 0),
+                "switched_count": detection.get("switched_or_switchable_count", 0),
+                "legacy_only_count": detection.get("legacy_in_tree_only_count", 0),
+            },
+            "candidates": results,
+        }
+
+    def _audit_legacy_cli(self, args: list) -> Tuple[bool, str]:
+        as_json = "--json" in args
+        cands = [a for a in args if not a.startswith("-")]
+        report = self.audit_legacy_candidates(cands or None)
+        if as_json:
+            return True, json.dumps(report, indent=2, ensure_ascii=False)
+        lines = [
+            "BACH LEGACY CANDIDATES AUDIT",
+            "=" * 50,
+            f"Geprüfte Kandidaten: {report['standalone_bound_count']}/{report['total_audited']} Standalone-gebunden",
+        ]
+        for item in report["candidates"]:
+            lines.append(
+                f"  - {item['candidate']:<14} [{item['readiness']}] "
+                f"pkg={item['has_standalone_module']} wired={item['bridge_bound_standalone']} "
+                f"({len(item['legacy_files'])} Legacy-Datei(en))"
+            )
+        return True, "\n".join(lines)
 
     # -------------------------------------------------------------------------
     # DATA API (für Web-GUI & programmatic access)
@@ -1971,7 +2203,7 @@ class ModulesHandler(BaseHandler):
             for f in sorted(files):
                 if f.endswith((".py", ".json", ".md")):
                     p = Path(r) / f
-                    hasher.update(p.read_bytes())
+                    hasher.update(p.read_bytes().replace(b"\r\n", b"\n"))
                     file_count += 1
         return hasher.hexdigest(), file_count
 

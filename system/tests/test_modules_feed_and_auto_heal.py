@@ -211,7 +211,15 @@ def test_gui_api_feeds_and_pins_endpoints(client):
     assert "quarantined" in data_pins
 
 
-def test_prompts_direct_execute_endpoint(client):
+def test_prompts_direct_execute_endpoint(client, monkeypatch):
+    import gui.server as server
+
+    def fake_responder(prompt: str, persona: str = "buddha", language: str = "de") -> str:
+        assert server._TALK_CALLER_SCOPE.get() is not None
+        return f"<talk_control {{}} />Echo ({persona}/{language}): {prompt}"
+
+    monkeypatch.setattr(server, "_talk_cortex_responder", fake_responder)
+
     # POST /api/prompts/execute
     res = client.post("/api/prompts/execute", json={
         "prompt": "Guten Tag, das ist ein Test-Prompt.",

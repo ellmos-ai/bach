@@ -45,6 +45,11 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Board-Runner, `bach update stack` & Legacy-Standalone-Module (Tasks #-61, #-62, #-63, 2026-11-14):**
+  - **Board-Runner Sequenz-Ausführung & Live-Tray-Refresh (Task #-61):** `GET /api/prompt-library/boards/{board_ref}` (`system/gui/server.py`), `▶ Board starten` in `prompt-library.html`, Sequenz-Steuerung `#chat-board-runner` (`initBoardRunner`, Pause/Weiter/Nächster/Abbrechen) in `chat.html` sowie Tray-Aktion `▶💬 Gesamtes Board im Web-Chat starten` und Live-DB-Signatur-Refresh (`_prompt_db_signature()`, `_check_prompt_boards_refresh()`) in `chat_tray.py`.
+  - **Einheitliche Self-Update-Orchestrierung (Task #-62):** `ModulesHandler.run_stack_update()`, CLI `bach update stack` / `bach modules stack-update` sowie `POST /api/modules/stack-update` orchestrieren Feed-Sync, Auto-Update, Hot-Wiring und Drift-Gate.
+  - **Legacy-Kandidaten-Audit & 4 neue Standalone-Module (Task #-63):** `bach modules audit-legacy` (`audit_legacy_candidates()`) sowie Extraktion, Tests, Hot-Wiring (`ocean_stack_bridge.py`) und Lockfile-Registrierung der 4 self-contained Module `permissions`, `config`, `backup` und `connector` unter `.MODULES/` (34/34 gebunden, 0 Drift).
+
 - **Modularer Core Lockfile-Audit, Feed-Roundtrip & Tray Prompt-Boards (Tasks #-58, #-59, #-60, 2026-11-14):**
   - **Lockfile Auto-Refresh & Checksum-Audit (Task #-58):** `ModulesHandler.refresh_lockfile()` (fail-closed Manifest-/Syntax-/Test-Audit vor Lockfile-Update), CLI `bach modules bootstrap --refresh-lockfile` sowie strikter CI-Gate `bach modules drift --strict`; `.MODULES/modules.lock.json` für `.MODULES/prompt` auf 0 Drift aktualisiert (30/30 intakt).
   - **Tray & PromptBoard Gespeicherte Boards (Task #-59):** `BACHTray._load_db_prompt_boards()` + `📋 Gespeicherte Boards`-Submenu unter `PromptBoard` in `system/hub/_services/chat/chat_tray.py`, Direkt-Run-Aktion `▶💬 Im Web-Chat ausführen` (`?prompt=...&autorun=1`) inkl. Query-Draft-Auswertung in `system/gui/templates/chat.html` (`loadLibraryDraft()`).

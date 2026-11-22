@@ -764,6 +764,7 @@ class BACHTray:
             except Exception:
                 pass
         self._check_module_updates(force=False)
+        self._check_prompt_boards_refresh()
 
     # --- PromptBoard ---
 
@@ -1035,9 +1036,57 @@ class BACHTray:
         self._ensure_initial_favorites(DEFAULT_PROMPTS)
         return DEFAULT_PROMPTS
 
+    def _prompt_db_signature(self):
+        """Leichtgewichtige Signatur für Live-Tray-Refresh von Prompt-Templates & Boards."""
+        sig_parts = []
+        db_path = BACH_DB if isinstance(BACH_DB, Path) else Path(BACH_DB)
+        if db_path.is_file():
+            try:
+                conn = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1.0)
+                try:
+                    t_row = conn.execute(
+                        "SELECT COUNT(*), COALESCE(MAX(updated_at), '') FROM prompt_templates"
+                    ).fetchone()
+                    sig_parts.append(("prompt_templates", t_row[0], t_row[1]) if t_row else None)
+                except sqlite3.Error:
+                    sig_parts.append(("prompt_templates", 0, ""))
+                try:
+                    b_row = conn.execute("SELECT COUNT(*), COALESCE(MAX(created_at), '') FROM prompt_boards").fetchone()
+                    i_row = conn.execute("SELECT COUNT(*), COALESCE(MAX(added_at), '') FROM prompt_board_items").fetchone()
+                    sig_parts.append(("prompt_boards", b_row[0] if b_row else 0, b_row[1] if b_row else ""))
+                    sig_parts.append(("prompt_board_items", i_row[0] if i_row else 0, i_row[1] if i_row else ""))
+                except sqlite3.Error:
+                    sig_parts.append(("prompt_boards", 0, ""))
+                finally:
+                    conn.close()
+            except sqlite3.Error:
+                sig_parts.append(("db_error", db_path.stat().st_mtime))
+        for cand in self._promptboard_library_candidates():
+            try:
+                if cand.exists():
+                    sig_parts.append((str(cand), cand.stat().st_mtime_ns))
+            except OSError:
+                pass
+        return tuple(sig_parts)
+
+    def _check_prompt_boards_refresh(self):
+        """Lädt Prompts & Boards automatisch nach, wenn sich DB oder PromptBoard-Dateien geändert haben."""
+        new_sig = self._prompt_db_signature()
+        prev_sig = getattr(self, "_prompt_db_sig", None)
+        if prev_sig is None:
+            self._prompt_db_sig = new_sig
+            return False
+        if new_sig != prev_sig:
+            self._prompt_db_sig = new_sig
+            self.favorite_prompts = {}
+            self.prompts = self._load_prompts()
+            return True
+        return False
+
     def _reload_prompts(self, *_):
         self.favorite_prompts = {}
         self.prompts = self._load_prompts()
+        self._prompt_db_sig = self._prompt_db_signature()
         if self.icon:
             fav_count = len(self.favorite_prompts)
             board_count = len(self.prompt_boards)
@@ -1196,6 +1245,8 @@ class BACHTray:
                 for b in self.prompt_boards
             ],
             "prompt_board_submenu_ready": True,
+            "board_runner_supported": True,
+            "live_tray_refresh_supported": True,
             "modular_standalone_count": self.modular_standalone_count,
             "quick_insert_supported": True,
             "prompt_execute_supported": True,
@@ -1304,6 +1355,20 @@ class BACHTray:
             if self.icon:
                 msg = "Prompt im Web-Chat gestartet" if autorun else "Prompt im Web-Chat geladen"
                 self.icon.notify(msg, "BACH PromptBoard")
+        return action
+
+    def _make_board_run_in_chat_action(self, board_id, board_title: str = ""):
+        def action(*_):
+            import webbrowser
+            qs = urllib.parse.urlencode({
+                "board_id": str(board_id if board_id is not None else board_title),
+                "board_autorun": "1",
+            })
+            url = f"{self.gui_url}/chat?{qs}"
+            webbrowser.open(url)
+            if self.icon:
+                label = board_title or str(board_id)
+                self.icon.notify(f"Board '{label}' im Web-Chat gestartet", "BACH Board-Runner")
         return action
 
     def _build_prompt_action_items(self, name: str, text: str, include_name: bool = True):
@@ -1920,6 +1985,13 @@ class BACHTray:
                     b_subitems.append(pystray.MenuItem(f"ℹ️ {b_desc[:60]}", None, enabled=False))
                     b_subitems.append(pystray.Menu.SEPARATOR)
                 if b_prompts:
+                    b_subitems.append(
+                        pystray.MenuItem(
+                            "▶💬 Gesamtes Board im Web-Chat starten",
+                            self._make_board_run_in_chat_action(board.get("id") or b_title, b_title),
+                        )
+                    )
+                    b_subitems.append(pystray.Menu.SEPARATOR)
                     for bp in b_prompts:
                         bp_name = bp.get("name") or "Prompt"
                         bp_text = bp.get("text") or ""
@@ -2488,6 +2560,7 @@ class BACHTray:
             self.state.get("worker_status"),
             self.state.get("task_id"),
             self.state.get("task_title"),
+            getattr(self, "_prompt_db_sig", None),
             worker_sig,
             slot_sig,
         )

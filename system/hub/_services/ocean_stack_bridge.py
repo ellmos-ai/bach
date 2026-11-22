@@ -928,6 +928,15 @@ def detect_legacy_in_tree_services() -> dict[str, Any]:
         "skills": "skills",
         "tools": "tools",
         "agents": "agents",
+        "permissions": "permissions",
+        "claude_permissions": "permissions",
+        "config": "config",
+        "user_config_store": "config",
+        "local_provider_config": "config",
+        "slots_config": "config",
+        "partner_config_manager": "config",
+        "backup": "backup",
+        "connector": "connector",
     }
 
     in_tree_services: list[dict[str, Any]] = []
@@ -994,6 +1003,22 @@ def auto_switch_to_standalone_modules() -> dict[str, Any]:
     }
 
 
+def load_permissions_module() -> Any:
+    return get_service_or_standalone("permissions")
+
+
+def load_config_module() -> Any:
+    return get_service_or_standalone("config")
+
+
+def load_backup_module() -> Any:
+    return get_service_or_standalone("backup")
+
+
+def load_connector_module() -> Any:
+    return get_service_or_standalone("connector")
+
+
 def ocean_modularized_services_status() -> dict[str, Any]:
     """Return status of modularized services and whether they are running standalone or legacy hub."""
     services = {
@@ -1027,6 +1052,10 @@ def ocean_modularized_services_status() -> dict[str, Any]:
         "skills": ("skills", load_skills_module),
         "tools": ("tools", load_tools_module),
         "agents": ("agents", load_agents_module),
+        "permissions": ("permissions", load_permissions_module),
+        "config": ("config", load_config_module),
+        "backup": ("backup", load_backup_module),
+        "connector": ("connector", load_connector_module),
     }
     status_map: dict[str, Any] = {}
     for name, (mod_id, loader) in services.items():

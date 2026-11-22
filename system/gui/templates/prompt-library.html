@@ -432,6 +432,7 @@
             <select id="pl-board-filter" class="pl-search" style="flex: 0 1 170px; font-size:0.78rem; padding:0.25rem 0.5rem;" onchange="loadList()" title="Nach gespeichertem Prompt-Board filtern">
                 <option value="">Alle Boards</option>
             </select>
+            <button class="btn btn-primary" id="pl-run-board-btn" onclick="runSelectedBoardInChat()" style="display:none; padding:0.25rem 0.65rem; font-size:0.78rem;" title="Alle Prompts dieses Boards nacheinander im Web-Chat ausführen">▶ Board starten</button>
             <button class="btn" id="pl-tag-reset" onclick="clearTagMatrix()" style="display:none; padding:0.2rem 0.55rem; font-size:0.75rem;">Filter zurücksetzen</button>
         </div>
 
@@ -559,6 +560,10 @@
                 renderCategories(data.categories, cat);
                 renderTagMatrix(data.tag_counts || []);
                 renderBoardFilter(data.boards || [], boardVal);
+                const runBoardBtn = document.getElementById('pl-run-board-btn');
+                if (runBoardBtn) {
+                    runBoardBtn.style.display = boardVal ? 'inline-block' : 'none';
+                }
                 updateQuickChips(data.categories);
                 if (isBoardView) {
                     renderBoardView(allPromptsCache, knownCategories);
@@ -566,6 +571,13 @@
             } catch (e) {
                 document.getElementById('pl-list').innerHTML = '<div class="pl-muted">Fehler: ' + escapeHtml(e.message) + '</div>';
             }
+        }
+
+        function runSelectedBoardInChat() {
+            const boardEl = document.getElementById('pl-board-filter');
+            const boardVal = boardEl ? boardEl.value : '';
+            if (!boardVal) return;
+            window.location.href = '/chat?board=' + encodeURIComponent(boardVal) + '&board_autorun=1';
         }
 
         function toggleTagMatrixChip(tag) {

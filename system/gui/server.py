@@ -2678,6 +2678,38 @@ async def auto_export_modules_endpoint(req: Request = None):
         return {"status": "error", "error": public_error_message()}
 
 
+@app.post("/api/modules/stack-update")
+async def stack_update_modules_endpoint(req: Request = None):
+    """Einheitliche Self-Update-Orchestrierung: Feeds, Module, Hot-Wiring & Drift-Check."""
+    try:
+        dry_run = False
+        strict = False
+        pull_newer = False
+        respect_lock = False
+        if req is not None and req.headers.get("content-length", "0") != "0":
+            try:
+                body = await req.json()
+                if isinstance(body, dict):
+                    dry_run = bool(body.get("dry_run", False))
+                    strict = bool(body.get("strict", False))
+                    pull_newer = bool(body.get("pull_newer", False))
+                    respect_lock = bool(body.get("respect_lock", False))
+            except Exception:
+                pass
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, data = handler.run_stack_update(
+            apply_updates=not dry_run,
+            dry_run=dry_run,
+            strict=strict,
+            pull_newer=pull_newer,
+            respect_lock=respect_lock,
+        )
+        return {"status": "ok" if ok else "error", "data": data}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
 
 # ═══════════════════════════════════════════════════════════════
 
@@ -12520,6 +12552,50 @@ async def list_prompt_library_boards():
         conn.close()
 
 
+@app.get("/api/prompt-library/boards/{board_ref}")
+async def get_prompt_library_board_detail(board_ref: str):
+    """Liefert ein Prompt-Board (per ID oder Titel) inkl. geordneter Prompts für den Board-Runner."""
+    conn = get_bach_db()
+    try:
+        try:
+            b_row = None
+            if str(board_ref).strip().isdigit():
+                b_row = conn.execute(
+                    "SELECT id, title, description, created_at FROM prompt_boards WHERE id = ?",
+                    (int(str(board_ref).strip()),),
+                ).fetchone()
+            if not b_row:
+                b_row = conn.execute(
+                    "SELECT id, title, description, created_at FROM prompt_boards WHERE LOWER(title) = LOWER(?)",
+                    (str(board_ref).strip(),),
+                ).fetchone()
+        except sqlite3.OperationalError:
+            raise HTTPException(status_code=404, detail="Prompt-Boards Tabelle nicht vorhanden") from None
+        if not b_row:
+            raise HTTPException(status_code=404, detail="Board nicht gefunden")
+        items = conn.execute(
+            """SELECT pt.id, pt.name, pt.text, pt.category, pt.tags, pt.purpose, pt.is_default,
+                      pbi.added_at
+               FROM prompt_board_items pbi
+               JOIN prompt_templates pt ON pt.id = pbi.prompt_id
+               WHERE pbi.board_id = ?
+               ORDER BY pbi.added_at, pt.name""",
+            (b_row["id"],),
+        ).fetchall()
+        b_dict = row_to_dict(b_row)
+        prompts = []
+        for r in items:
+            d = row_to_dict(r)
+            d["prompt_id"] = d["id"]
+            prompts.append(d)
+        b_dict["prompts"] = prompts
+        b_dict["prompt_ids"] = [p["id"] for p in prompts]
+        b_dict["item_count"] = len(prompts)
+        return {"ok": True, "board": b_dict}
+    finally:
+        conn.close()
+
+
 @app.post("/api/prompt-library/boards/assign")
 async def assign_prompt_to_board_or_category(req: Request):
     """Ordnet einen Prompt einer Kategorie und/oder einem Prompt-Board zu."""
@@ -13143,7 +13219,7 @@ async def copy_prompt_to_clipboard(req: PromptSendRequest):
 
 @app.post("/api/prompts/execute")
 @app.post("/api/prompt-generator/send/chat")
-async def execute_prompt_endpoint(req: PromptSendRequest):
+async def execute_prompt_endpoint(req: PromptSendRequest, request: Request):
     """Directly execute a prompt via local cortex responder / chat backend and broadcast to GUI."""
     try:
         clean_prompt = str(req.prompt or "").strip()
@@ -13151,7 +13227,12 @@ async def execute_prompt_endpoint(req: PromptSendRequest):
             raise HTTPException(status_code=400, detail="Prompt darf nicht leer sein")
 
         persona = req.persona or "buddha"
-        reply = _talk_cortex_responder(clean_prompt, persona=persona, language=req.language or "de")
+        chat_id = _talk_chat_scope(getattr(request.state, "device", None), "buddha_talk")
+        scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+        try:
+            reply = _talk_cortex_responder(clean_prompt, persona=persona, language=req.language or "de")
+        finally:
+            _TALK_CALLER_SCOPE.reset(scope_token)
         clean_reply = _strip_talk_control_tags(reply)
 
         if "ws_manager" in globals() and ws_manager is not None:
@@ -13180,9 +13261,11 @@ async def execute_prompt_endpoint(req: PromptSendRequest):
 
 
 @app.post("/api/prompts/stream")
-async def stream_prompt_endpoint(req: PromptSendRequest):
+async def stream_prompt_endpoint(req: PromptSendRequest, request: Request):
     """Stream prompt execution chunk by chunk via Server-Sent Events (SSE)."""
     from starlette.responses import StreamingResponse
+
+    chat_id = _talk_chat_scope(getattr(request.state, "device", None), "buddha_talk")
 
     async def event_generator():
         clean_prompt = str(req.prompt or "").strip()
@@ -13192,7 +13275,11 @@ async def stream_prompt_endpoint(req: PromptSendRequest):
 
         yield f"event: start\ndata: {json.dumps({'persona': req.persona or 'buddha', 'timestamp': datetime.now().isoformat()})}\n\n"
 
-        reply = _talk_cortex_responder(clean_prompt, persona=req.persona or "buddha", language=req.language or "de")
+        scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+        try:
+            reply = _talk_cortex_responder(clean_prompt, persona=req.persona or "buddha", language=req.language or "de")
+        finally:
+            _TALK_CALLER_SCOPE.reset(scope_token)
         clean_text = _strip_talk_control_tags(reply)
 
         words = clean_text.split(" ")

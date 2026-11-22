@@ -1,13 +1,13 @@
 {
   "schema": "bach.modules-lock.v1",
-  "generated_at": "2026-11-14T12:34:37.021213",
-  "total_modules": 30,
+  "generated_at": "2026-11-22T17:35:12.310745",
+  "total_modules": 34,
   "modules": {
     "agent_process_provider": {
       "name": "agent_process_provider",
       "version": "1.0.0",
       "entrypoint": "src/agent_process_provider.py",
-      "sha256": "42fb6b0a16c8c4dc7d015acb618a159e550d6ffa49c197a4851af11fab8e0ca2",
+      "sha256": "75d743ca712a711385838e6da94df7cdcd5d2dc1af22423b39e50e4228bbb48c",
       "files_count": 4,
       "selfcontained": true
     },
@@ -15,7 +15,7 @@
       "name": "agent_spawn_gate",
       "version": "1.0.0",
       "entrypoint": "src/agent_spawn_gate.py",
-      "sha256": "8181ffdca7a483868e8156691f5d312c0033483c7458d28df1eafda23859d32c",
+      "sha256": "b876492202e0f9ee6c20153bbe1e2d93421d154ffc939461d7e9e038513117ec",
       "files_count": 4,
       "selfcontained": true
     },
@@ -31,8 +31,16 @@
       "name": "audit_logger",
       "version": "1.0.0",
       "entrypoint": "src/audit_logger.py",
-      "sha256": "f96901525d76c3abd95528e05a133b7be99a7ab6b54879f863fa88aa4908642c",
+      "sha256": "d4d7d3d939a5756254cfd8c5c14eb34ef1983bb7262abd44868094d43dd59a1d",
       "files_count": 4,
+      "selfcontained": true
+    },
+    "backup": {
+      "name": "backup",
+      "version": "1.0.0",
+      "entrypoint": "src/backup.py",
+      "sha256": "b6b061c679feca72817cf085e3617a484c140254e78523653ce74bd7a897b8ca",
+      "files_count": 3,
       "selfcontained": true
     },
     "cache": {
@@ -43,11 +51,27 @@
       "files_count": 4,
       "selfcontained": true
     },
+    "config": {
+      "name": "config",
+      "version": "1.0.0",
+      "entrypoint": "src/config.py",
+      "sha256": "08afb05b9bd753edf6145a64bf68d412e845ed5e7bcd9f805f1f7201bc12c0ed",
+      "files_count": 3,
+      "selfcontained": true
+    },
+    "connector": {
+      "name": "connector",
+      "version": "1.0.0",
+      "entrypoint": "src/connector.py",
+      "sha256": "a07d7bef2077c4cae9cebefca16181d7208503d123514ce9dc0ab906ed9bd736",
+      "files_count": 3,
+      "selfcontained": true
+    },
     "context_hints": {
       "name": "context_hints",
       "version": "1.0.0",
       "entrypoint": "src/context_hints.py",
-      "sha256": "35e81c2eaffdf9266badb93cac1bf71cbe8fc2f19a66634d65deca0b3bd6457c",
+      "sha256": "d058989093e59144bc3cfb82460cf0aad3732c273c9ef75dbea0b4555748085e",
       "files_count": 4,
       "selfcontained": true
     },
@@ -63,7 +87,7 @@
       "name": "db_sync_adapter",
       "version": "1.0.0",
       "entrypoint": "src/db_sync_adapter.py",
-      "sha256": "05f1c68c0f512b184b2aba536f0067c475ef9dc3dcd032f1a12c3a624c7ca559",
+      "sha256": "b60fbf6d0a2adf2b78ae49378a05c853f4459c2873d86cfd1361a05ba8f5e52d",
       "files_count": 4,
       "selfcontained": true
     },
@@ -71,7 +95,7 @@
       "name": "db_sync_readiness",
       "version": "1.0.0",
       "entrypoint": "src/db_sync_readiness.py",
-      "sha256": "c38689f0b582e59454a7bb9c12481ee2b796751cad567abadbc3afe0ca0026eb",
+      "sha256": "62b9babd4708d0725fa74119befed6a2e78075bc907efffeb6edc8caadaf0afe",
       "files_count": 4,
       "selfcontained": true
     },
@@ -79,7 +103,7 @@
       "name": "domain_writer_gate",
       "version": "1.0.0",
       "entrypoint": "src/domain_writer_gate.py",
-      "sha256": "aa442f8edb687d98f9ecdcef6994ee549483cab1eea13efaa2adf52c39e0cb65",
+      "sha256": "3c8b65414c9ba41099a60ec09bee97640a93bd7e6d6370cba7728eff61ac41d7",
       "files_count": 4,
       "selfcontained": true
     },
@@ -139,6 +163,14 @@
       "files_count": 4,
       "selfcontained": true
     },
+    "permissions": {
+      "name": "permissions",
+      "version": "1.0.0",
+      "entrypoint": "src/permissions.py",
+      "sha256": "85d098878b767366d44183cde2c1b00a20245b2febeb77a5124dbac63955f9cb",
+      "files_count": 3,
+      "selfcontained": true
+    },
     "plugins": {
       "name": "plugins",
       "version": "1.0.0",
@@ -159,7 +191,7 @@
       "name": "rate_limit_policy",
       "version": "1.0.0",
       "entrypoint": "src/rate_limit_policy.py",
-      "sha256": "e5549936577a3d6f5fd107aae4084bdd1a6a3a4ff4be39c85a357fcc0ba94dc3",
+      "sha256": "2b467d49971d52cf975267e043fb01d8c74aa285ff25d96341987d8a04a939b5",
       "files_count": 4,
       "selfcontained": true
     },
@@ -175,7 +207,7 @@
       "name": "scheduler_provider",
       "version": "1.0.0",
       "entrypoint": "src/scheduler_provider.py",
-      "sha256": "22448391104769cf00c899de2bf7de7204fe5a90773bf6f08aec19550968131c",
+      "sha256": "a840e7d4feb4e37e73303ec27693b64b9c0c8afbee38ee8b7641c20f6ec7bc7a",
       "files_count": 4,
       "selfcontained": true
     },
@@ -191,7 +223,7 @@
       "name": "session_checkpoint_adapter",
       "version": "1.0.0",
       "entrypoint": "src/session_checkpoint_adapter.py",
-      "sha256": "579cbb9e73fe4d7b08f66fa4a842e7c0d2c47a33d161ef297845a5774d3de942",
+      "sha256": "a2e8625e43152086184b4e2829079cfbabb30e9f325d0031816b3028084c64b3",
       "files_count": 4,
       "selfcontained": true
     },
@@ -199,7 +231,7 @@
       "name": "session_checkpoint_provider",
       "version": "1.0.0",
       "entrypoint": "src/session_checkpoint_provider.py",
-      "sha256": "69d2a6824c43cea3595a38977c95006d17ee2d8241174df3fa390715662839fd",
+      "sha256": "f2d2c2fde5c6cb10a83461763952e8e3447c3cf894ff8382cc084231c1be21ba",
       "files_count": 4,
       "selfcontained": true
     },
@@ -215,7 +247,7 @@
       "name": "telemetry",
       "version": "1.0.0",
       "entrypoint": "src/telemetry.py",
-      "sha256": "a7c9d2b0cfef320740e184aca6f1f0c53353917417497276d63a6a7b11c1a182",
+      "sha256": "bfda6feb5485966ad0753c63b2b1c0c9450c06f8f05e928af669fe2a176dfa80",
       "files_count": 4,
       "selfcontained": true
     },
@@ -223,7 +255,7 @@
       "name": "token_budget",
       "version": "1.0.0",
       "entrypoint": "src/token_budget.py",
-      "sha256": "b475dd8fcd11b3536c15748686ec852798ea4acbf8e11c62826d9da89d772b5c",
+      "sha256": "7d57260a9ad5a26834c564a0ac404ff7cf2698f2da6adfb0f48ffb017c151cb7",
       "files_count": 4,
       "selfcontained": true
     },
@@ -239,7 +271,7 @@
       "name": "worker_policy",
       "version": "1.0.0",
       "entrypoint": "src/worker_policy.py",
-      "sha256": "e0260a2fd9f1a2ad62c2007e92e4c0f783cfd17d9608dae19b2f6617f771b7c4",
+      "sha256": "993b09c3b48d79206caf3e2f728c478dc1e71f1bac8250b6009da41261f4310b",
       "files_count": 4,
       "selfcontained": true
     }
