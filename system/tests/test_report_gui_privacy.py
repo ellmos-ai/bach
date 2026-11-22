@@ -48,7 +48,8 @@ def _akte(root: Path) -> Path:
 def api(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
-    monkeypatch.setattr(server, "validate_token", lambda token: {"id": 1} if token == "report-fixture" else None)
+    devices = {"report-fixture": {"id": 1}, "other-report-fixture": {"id": 2}}
+    monkeypatch.setattr(server, "validate_token", devices.get)
     monkeypatch.setattr(server, "BACH_DIR", tmp_path)
     monkeypatch.setattr(server, "_report_workflow_service", rws.ReportWorkflowService(base_path=tmp_path / "Berichte"))
     monkeypatch.setattr(rws, "WISSENSDATENBANK", tmp_path / "kb")
@@ -93,6 +94,111 @@ def test_api_cloud_prompt_contains_no_case_data(api):
     for forbidden in FORBIDDEN:
         assert forbidden.lower() not in low, f"Falldatum im Cloud-Prompt: {forbidden!r}"
     assert "fortschritte" in low and "feinmotorik" in low  # Inhalt bleibt, nur die Identitaet faellt
+
+
+def test_api_keeps_report_workspaces_separate_across_case_changes(api, tmp_path):
+    first = _session(api)
+    assert api.post(f"/api/report/session/{first}/profile", json=PROFILE).json()["success"]
+
+    second = api.post("/api/report/session/start").json()["session_id"]
+    other_profile = {"client_name": "Mila Sommer", "geburtsdatum": "19.06.2018"}
+    refused = api.post(f"/api/report/session/{second}/profile", json=other_profile).json()
+    assert refused["error_code"] == "document_scan_missing"
+    second_case = tmp_path / "andere_akte"
+    second_case.mkdir()
+    (second_case / "Verlaufsprotokoll_2025.txt").write_text(
+        "Mila Sommer zeigte Fortschritte bei der Lautbildung.", encoding="utf-8",
+    )
+    imported = api.post(f"/api/report/session/{second}/import", json={"folder": "andere_akte"}).json()
+    assert imported["imported_count"] == 1
+    assert api.post(f"/api/report/session/{second}/profile", json=other_profile).json()["success"]
+
+    def prompt(session_id):
+        response = api.post(f"/api/report/session/{session_id}/prompt", json={
+            "include_wissensdatenbank": False,
+        }).json()
+        assert response["success"], response
+        return response["prompt"].lower()
+
+    assert "lautbildung" in prompt(second)
+    assert "feinmotorik" not in prompt(second)
+    assert api.post(f"/api/report/session/{second}/cleanup").json()["success"]
+    assert "feinmotorik" in prompt(first)
+    assert "lautbildung" not in prompt(first)
+    assert not list((tmp_path / "Berichte" / "data_roh").iterdir())
+    assert (second_case / "Verlaufsprotokoll_2025.txt").is_file()
+
+
+def test_report_docx_is_delivered_only_to_the_session_device(api, tmp_path, monkeypatch):
+    from docx import Document
+
+    sid = _session(api)
+    url = f"/api/report/session/{sid}/generate"
+    accept = {"Accept": server._REPORT_DOCX_TYPE}
+    body = {"llm_response": '{"summary":"Synthetische Uebung."}'}
+    other_device = api.post(url, headers={**accept, "Authorization": "Bearer other-report-fixture"}, json=body)
+    assert other_device.status_code == 404
+    assert "Content-Disposition" not in other_device.headers
+
+    template = tmp_path / "vorlage.docx"
+    monkeypatch.setenv("FOERDERBERICHT_TEMPLATE", str(template))
+    missing = api.post(url, headers=accept, json=body)
+    assert missing.json()["reason"] == "template_missing"
+    assert "Content-Disposition" not in missing.headers
+
+    doc = Document()
+    doc.add_paragraph("{{BERICHT_TEXT}}")
+    doc.save(template)
+    binary = api.post(url, headers=accept, json=body)
+    assert binary.status_code == 200
+    assert binary.headers["Content-Type"] == server._REPORT_DOCX_TYPE
+    assert binary.headers["Content-Disposition"] == 'attachment; filename="Foerderbericht.docx"'
+    assert "no-store" in {directive.strip() for directive in binary.headers["Cache-Control"].split(",")}
+    assert binary.content.startswith(b"PK")
+    saved = server.get_report_workflow_service().get_session(sid).output_path
+    assert binary.content == saved.read_bytes()
+    assert api.post(url, json=body).json()["output_path"] == str(saved)
+
+
+def test_report_lifespan_cleans_idle_web_sessions_and_preserves_the_artifacts(api, tmp_path, monkeypatch):
+    from time import monotonic, sleep
+
+    from gui import file_watcher
+
+    monkeypatch.setattr(server, "init_financial_tables", lambda: None)
+    monkeypatch.setattr(file_watcher, "WATCHDOG_AVAILABLE", False)
+    monkeypatch.setattr(server, "_REPORT_CLEANUP_INTERVAL_SECONDS", 0.01)
+    service = server.get_report_workflow_service()
+    legacy = service.start_session()
+    idle = service.get_session(_session(api))
+    active = service.get_session(_session(api))
+    idle_workspace = Path(idle.workspace.name)
+    active_workspace = Path(active.workspace.name)
+    output = tmp_path / "Berichte" / "output_berichte" / "Testbericht.docx"
+    output.write_bytes(b"synthetic report")
+    idle.output_path = output
+    idle.last_activity = monotonic() - service.WEB_SESSION_IDLE_SECONDS - 1
+    untouched = active.last_activity
+    foreign = api.get(f"/api/report/session/{active.session_id}", headers={
+        "Authorization": "Bearer other-report-fixture",
+    }).json()
+    assert foreign["success"] is False and active.last_activity == untouched
+    expired = api.get(f"/api/report/session/{idle.session_id}").json()
+    assert expired["success"] is False and idle_workspace.exists()
+
+    with api:
+        deadline = monotonic() + 3
+        while idle_workspace.exists() and monotonic() < deadline:
+            sleep(0.02)
+        assert not idle_workspace.exists()
+        assert service.get_session(idle.session_id) is None
+        assert active_workspace.is_dir()
+        assert api.get(f"/api/report/session/{active.session_id}").json()["success"]
+        assert active.last_activity > untouched
+        assert service.get_session(legacy.session_id) is legacy
+    assert not active_workspace.exists()
+    assert output.read_bytes() == b"synthetic report"
+    assert (tmp_path / "akte" / "Verlaufsprotokoll_2025.txt").is_file()
 
 
 def test_api_refuses_cloud_profile_without_spacy_and_names_the_reason(api, monkeypatch):

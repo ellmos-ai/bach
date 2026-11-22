@@ -648,10 +648,11 @@ def test_cleanup_failure_is_visible_at_the_api_route(tmp_path, monkeypatch):
     from gui import server
 
     _false_result(monkeypatch)
-    service, session = _workflow(tmp_path)
-    service._sessions[session.session_id] = session
-    roh = tmp_path / "base" / "data_roh"
-    roh.mkdir(parents=True, exist_ok=True)
+    service, fixture = _workflow(tmp_path)
+    session = service.start_session(isolate_files=True)
+    session.profile = fixture.profile
+    session.owner_device_id = 1
+    roh = Path(session.workspace.name) / "data_roh"
     (roh / "Notiz.txt").write_text("Max Mustermann war da.", encoding="utf-8")
     _lock_unlink(monkeypatch, lambda p: _in_ano(p, "Notiz.txt"))
     monkeypatch.setattr(server, "get_report_workflow_service", lambda: service)
@@ -663,7 +664,7 @@ def test_cleanup_failure_is_visible_at_the_api_route(tmp_path, monkeypatch):
         api.close()
 
     assert res.status_code == 200 and res.json()["success"] is False
-    assert session.anonymized is False
+    assert session.anonymized is False and session.status == "error"
 
 
 def test_folder_unlink_failure_aborts_the_run_without_key_or_profile(tmp_path, monkeypatch):

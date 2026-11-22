@@ -12,19 +12,22 @@ import pytest
 
 
 def _call(monkeypatch, tmp_path, *, output, error_message="", status="error"):
+    from fastapi import Request
     from gui import server as gui_server
     session = SimpleNamespace(status=status, error_message=error_message)
     service = SimpleNamespace(
-        get_session=lambda _sid: session,
+        get_web_session=lambda _sid, _device_id: session,
         generate_report=lambda *_a, **_k: output,
     )
     monkeypatch.setattr(gui_server, "get_report_workflow_service", lambda: service)
-    return asyncio.run(gui_server.generate_session_report("s1", {"llm_response": "Synthetischer Text"}))
+    request = Request({"type": "http", "headers": [], "state": {"device": {"id": 1}}})
+    return asyncio.run(gui_server.generate_session_report("s1", request, {"llm_response": "Synthetischer Text"}))
 
 
 @pytest.mark.parametrize("message,reason", [
     ("Vorlage nicht gefunden: vorlage.docx. Pfad per Umgebungsvariable binden", "template_missing"),
     ("Generator-Fehler: Feld Mustername leer", "generator_failed"),
+    ("Generator nicht gefunden. FOERDERBERICHT_GENERATOR prüfen.", "generator_missing"),
     ("python-docx nicht installiert", "docx_missing"),
     ("", "unknown"),
 ])

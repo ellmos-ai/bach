@@ -129,3 +129,18 @@ DATEIEN
   CLI-Handler:     hub/bericht.py (Operation: pipeline)
   Chain:           tools/llmauto/chains/foerderbericht.json
   Template:        skills/_templates/bericht_template_geiger_universal.docx
+
+PRIVATE DATEIEN IM BACH-WEBDIENST
+---------------------------------
+  FOERDERBERICHT_TEMPLATE   Absoluter Pfad zur Word-Vorlage (.docx).
+  FOERDERBERICHT_GENERATOR  Absoluter Pfad zu generator.py. Zugehörige
+                            Module und Schema bleiben neben dem Generator.
+
+  Beide Variablen in der Umgebung des BACH-Webdienstes setzen. Wenn der
+  konfigurierte Generator fehlt, meldet die JSON-Berichtserstellung einen
+  Fehler. Die private Vorlage und der Generator können außerhalb des
+  BACH-Checkouts liegen.
+
+  Der Webdienst räumt eine Sitzung nach zwei Stunden ohne Anfragen dieses
+  Geräts beim nächsten Prüflauf auf (alle 60 Sekunden). Die Originalakte
+  und fertige Word-Berichte bleiben erhalten. „Neuer Fall“ räumt sofort auf.

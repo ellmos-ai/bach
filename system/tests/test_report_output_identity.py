@@ -40,6 +40,18 @@ def document_text(path):
     return "\n".join(paragraph.text for paragraph in Document(path).paragraphs)
 
 
+def test_missing_explicit_generator_reports_failure_without_fallback(tmp_path, monkeypatch):
+    service, session = synthetic(tmp_path, monkeypatch)
+    monkeypatch.setenv("FOERDERBERICHT_GENERATOR", str(tmp_path / "missing.py"))
+
+    result = service.generate_report(session, '{"summary":"Synthetischer Text"}')
+
+    assert result is None
+    assert session.status == "error"
+    assert session.error_message.startswith("Generator nicht gefunden")
+    assert not list(tmp_path.rglob("Foerderbericht_*.docx"))
+
+
 @pytest.mark.parametrize("mode", ["local", "cloud"])
 @pytest.mark.parametrize("restore", [False, True])
 @pytest.mark.parametrize("template", [False, True])
@@ -139,3 +151,69 @@ def test_simultaneous_helper_preserves_existing_phone_address_email_boundaries(
 
     expected, _ = _replace_word_boundary(source, alias, original)
     assert module._restore_original_values(source, {alias: original}) == expected
+
+
+@pytest.mark.parametrize("failed_attempt", ["partial_failure", "no_output", "invalid_docx"])
+def test_failed_generation_keeps_the_previous_report(tmp_path, monkeypatch, failed_attempt):
+    service, session = synthetic(tmp_path, monkeypatch)
+    generator = tmp_path / "fixture_generator.py"
+    generator.write_text(
+        '''
+from pathlib import Path
+from types import SimpleNamespace
+from docx import Document
+
+def fill_template(template_path, report_data, output_path):
+    text = report_data["summary"]
+    target = Path(output_path)
+    if text == "partial_failure":
+        target.write_bytes(b"unfinished")
+        return SimpleNamespace(success=False, errors=["synthetischer Schreibfehler"])
+    if text == "no_output":
+        return SimpleNamespace(success=True)
+    if text == "invalid_docx":
+        target.write_bytes(b"not a DOCX")
+        return SimpleNamespace(success=True)
+    doc = Document(template_path)
+    doc.add_paragraph(text)
+    doc.save(target)
+    return SimpleNamespace(success=True)
+''',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOERDERBERICHT_GENERATOR", str(generator))
+
+    original_path = service.generate_report(session, '{"summary":"Erster Bericht"}')
+    original_bytes = original_path.read_bytes()
+    assert "Erster Bericht" in document_text(original_path)
+
+    failed = service.generate_report(session, '{"summary":"' + failed_attempt + '"}')
+    assert failed is None
+    assert session.status == "error"
+    assert session.error_message.startswith("Generator-Fehler")
+    assert original_path.read_bytes() == original_bytes
+    assert list(original_path.parent.iterdir()) == [original_path]
+
+    retry = service.generate_report(session, '{"summary":"Überarbeiteter Bericht"}')
+    assert retry == original_path
+    assert "Überarbeiteter Bericht" in document_text(retry)
+    assert session.status == "completed"
+
+
+def test_markdown_write_failure_preserves_the_previous_report(tmp_path, monkeypatch):
+    from pathlib import Path
+    from docx.document import Document as WordDocument
+
+    service, session = synthetic(tmp_path, monkeypatch)
+    original_path = service.generate_report(session, "# Erster Bericht")
+    original_bytes = original_path.read_bytes()
+
+    def partial_save(_doc, target):
+        Path(target).write_bytes(b"unfinished")
+        raise OSError("synthetic write failure")
+
+    monkeypatch.setattr(WordDocument, "save", partial_save)
+    assert service.generate_report(session, "# Überarbeiteter Bericht") is None
+    assert session.status == "error"
+    assert original_path.read_bytes() == original_bytes
+    assert list(original_path.parent.iterdir()) == [original_path]
