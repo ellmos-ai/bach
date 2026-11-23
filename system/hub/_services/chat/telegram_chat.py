@@ -126,6 +126,7 @@ from hub._services.chat.slots_config import (
     bump_pause_counter,
     get_slot_pause_info,
     DEFAULT_CORE_SLOTS,
+    DEFAULT_SYSTEM_PROMPT,
     add_worker,
     change_core_prompt,
     core_prompt_snapshot,
@@ -3413,7 +3414,19 @@ except Exception:
 if os.path.exists(system_file):
     system_prompt = open(system_file, encoding="utf-8").read().strip()
 else:
-    system_prompt = "Du bist ein lokaler BACH Chat-Assistent. Antworte auf Deutsch, präzise und klar."
+    system_prompt = DEFAULT_SYSTEM_PROMPT
+
+
+def _live_system_default_prompt() -> str:
+    """Liest den aktiven Systemprompt dynamisch aus slots_config (GUI-Änderungen wirken sofort)."""
+    try:
+        from hub._services.chat.slots_config import get_prompt_templates
+        text = str(get_prompt_templates().get("system_default", {}).get("text") or "").strip()
+        if text:
+            return text
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        log.debug("Live system_default Prompt nicht lesbar, Fallback aktiv: %s", exc)
+    return system_prompt
 
 
 session_store = None
@@ -3448,6 +3461,7 @@ runtime = ChatRuntime(
     injector=_injector if HAS_BACH else None,
     session_store=session_store,
     agent_operations=_native_agent_operations,
+    base_system_reader=_live_system_default_prompt,
 )
 
 _global_defaults = {

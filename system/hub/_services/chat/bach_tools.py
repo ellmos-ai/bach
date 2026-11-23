@@ -1131,18 +1131,19 @@ TOOLS_SAFE = [
     }, ["query"]),
     _tool("task_manage", "BACH-Tasks verwalten (Status, Zerlegung, Ergebnis)", {
         "action": {"type": "string", "enum": ["list", "add", "done", "submit_result", "detail", "update", "decompose"],
-                   "description": "list (bei Bindung ohne task_id), add, detail, update (nur Status), decompose, submit_result/done (result + complete)"},
+                   "description": "list (bei Bindung ohne task_id), add, detail, update (Status/Felder; Notizen über append_description anhängen), decompose, done (im freien Chat nur task_id ohne result), submit_result (gebundener Worker: result + complete)"},
         "title": {"type": "string", "description": "Task-Titel (bei add)"},
         "priority": {"type": "string", "enum": ["P1", "P2", "P3", "P4"], "description": "Priorität (Standard P3)"},
         "task_id": {"type": "integer", "description": "Task-ID (bei done/detail/update/decompose)"},
-        "result": {"type": "string", "description": "Fertiges Ergebnis bei submit_result/done (max. 3000 Zeichen). Werkzeugbeleg Pflicht; complete=false: Teilstand, Task bleibt offen."},
-        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/done; true nur mit bestätigtem Werkzeugbeleg."},
-        "description": {"type": "string", "description": "Bei add/update: was zu tun ist UND was dafuer zu lesen ist."},
+        "result": {"type": "string", "description": "Nur bei gebundenem Worker (submit_result): fertiges Ergebnis (max. 3000 Zeichen). Im freien Chat bei action='done' WEGLASSEN."},
+        "complete": {"type": "boolean", "description": "Pflicht bei submit_result/gebundenem done; true nur mit bestätigtem Werkzeugbeleg. Im freien Chat bei action='done' nicht erforderlich."},
+        "description": {"type": "string", "description": "Bei add: vollständige Aufgabenbeschreibung. Bei update: ersetzt den kompletten Text (für Notizen stattdessen append_description nutzen)."},
+        "append_description": {"type": "string", "description": "Bei update: hängt eine Notiz/Ergänzung an die bestehende Beschreibung an, ohne Originaltext und Abnahmekriterien zu überschreiben."},
         "category": {"type": "string", "description": "Projekt-/Themenzuordnung"},
         "status": {"type": "string", "description": "Status (bei update, z.B. pending, open, in_progress, completed)"},
         "depends_on": {"type": "string", "description": "IDs vorausgesetzter Tasks, kommagetrennt"},
         "assigned_to": {"type": "string", "description": "Zuständige Fachrolle oder Agentenkennung"},
-        "assigned_slot": {"type": "string", "description": "Verfügbarer Steckplatz aus agent_manage action=list"},
+        "assigned_slot": {"type": "string", "description": "Verfügbarer Hintergrund-Worker-Steckplatz aus agent_manage action=list (keine Interface-Slots wie buddha_chat)"},
         "required_model": {"type": "string", "description": "Optionale feste Modellbindung"},
         "result_max_chars": {"type": "integer", "description": "Optionales Task-Ausgabelimit von 1 bis 3000 Zeichen; bei task_manage(update) weglassen zum Beibehalten"},
         "subtasks": {
@@ -1179,10 +1180,11 @@ TOOLS_SAFE = [
         "eltern": {"type": "array", "items": {"type": "string"}, "description": "Elternnamen zur Anonymisierung"},
         "adresse": {"type": "string", "description": "Klienten-Adresse zur Anonymisierung"},
     }, ["action"]),
-    _tool("delegate", "Aufgabe an Claude Code oder Codex CLI delegieren", {
-        "target": {"type": "string", "enum": ["claude", "codex"], "description": "Ziel-Agent"},
+    _tool("delegate", "Aufgabe an externe CLI-Agenten delegieren (Claude Code, Codex CLI oder Antigravity/agy)", {
+        "target": {"type": "string", "enum": ["claude", "codex", "agy"], "description": "Ziel-Agent (claude, codex oder agy für Antigravity/Gemini)"},
         "prompt": {"type": "string", "description": "Aufgabe oder Frage für den Agenten"},
         "context": {"type": "string", "description": "Optionaler Kontext zur Aufgabe"},
+        "model": {"type": "string", "description": "Optionales Modell für den Ziel-Agenten (z. B. gemini-4-carbon-high bei agy)"},
     }, ["target", "prompt"]),
     _tool("weather", "Aktuelles Wetter für einen Ort oder Koordinaten abfragen (wttr.in)", {
         "location": {"type": "string", "description": "Ortsname (z.B. 'Berlin') oder Koordinaten ('52.52,13.405')"},
@@ -1565,7 +1567,51 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             grants = {tool["function"]["name"] for tool in tools_for_mode(mode, bound_worker=worker_task_binding is not None)}
             if allowed_tools is not None:
                 grants &= set(allowed_tools)
-            return json.dumps(agent_operations(args, mode=mode, allowed_tools=grants), ensure_ascii=False)
+            _AGENT_PERM_MSGS = frozenset({
+                "Agentenverwaltung ist in diesem Modus nicht verfügbar",
+                "Neue Agenten erhalten höchstens die Werkzeugrechte ihres Erstellers",
+                "Bestehende Steckplätze werden ausdrücklich im Editor aktualisiert",
+                "Steckplatz darf den Erstellermodus nicht erweitern",
+                "Blueprint überschreitet die Werkzeugrechte seines Erstellers",
+                "Agenten starten ausschließlich verfügbare lokale Worker",
+                "Worker-Modus überschreitet die Rechte des Erstellers",
+                "Worker-Werkzeugrechte sind nicht als Teilmenge bestätigt",
+                "Lokaler Provider-Endpunkt ist nicht bestätigt",
+                "Worker ist bereits aktiv oder ungeprüft",
+            })
+            _AGENT_VALUE_MSGS = frozenset({
+                "Agentenwerkzeug erwartet ein Objekt",
+                "Unbekannte Katalogargumente",
+                "Blueprint erforderlich",
+                "Agenten legen eigene neue Blueprints an",
+                "Blueprint benötigt gültige Werkzeugrechte",
+                "Blueprint- und Konfigurationsversion erforderlich",
+                "Gültige Blueprint-ID erforderlich",
+                "Steckplatz und aktuelle Konfigurationsversion erforderlich",
+                "Gültige Steckplatz-ID erforderlich",
+                "Unbekannte Agentenaktion",
+            })
+            _AGENT_CONFLICT_MSGS = {
+                "configuration_version_conflict": "Konfigurationsversion ist veraltet; bitte agent_manage(action='list') neu abrufen.",
+                "blueprint_version_conflict": "Blueprint-Version ist veraltet; bitte neu laden.",
+                "Agentenverwaltung benötigt den kanonischen Lead-Controller": "Agentenverwaltung benötigt den kanonischen Lead-Controller.",
+            }
+            try:
+                return json.dumps(agent_operations(args, mode=mode, allowed_tools=grants), ensure_ascii=False)
+            except PermissionError as exc:
+                msg = str(exc) if str(exc) in _AGENT_PERM_MSGS else "Agentenaktion ist für diesen Steckplatz oder Modus nicht freigegeben."
+                return _tool_policy_denial("tool_not_authorized", f"BLOCKIERT: {msg}")
+            except ValueError as exc:
+                msg = str(exc) if str(exc) in _AGENT_VALUE_MSGS else "Ungültige Parameter für agent_manage."
+                return _tool_policy_denial("invalid_arguments", f"BLOCKIERT: {msg}")
+            except KeyError:
+                return _tool_policy_denial("resource_not_found", "BLOCKIERT: Blueprint oder Steckplatz wurde nicht gefunden.")
+            except RuntimeError as exc:
+                if str(exc) in _AGENT_CONFLICT_MSGS:
+                    return _tool_policy_denial("state_conflict", f"BLOCKIERT: {_AGENT_CONFLICT_MSGS[str(exc)]}")
+                if str(exc) == "Kanonische TaskDB fehlt":
+                    return _tool_policy_denial("provider_unavailable", "BLOCKIERT: Kanonische Task-Datenbank ist nicht verfügbar.")
+                return _tool_effect_unconfirmed()
 
         if name == "skill_create":
             if not isinstance(args, dict) or set(args) != {"name", "content", "source_version"}:
@@ -1610,6 +1656,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 return _tool_policy_denial("secret_path_denied", "BLOCKIERT: Secrets-Verzeichnis darf nicht aufgelistet werden.")
             try:
                 entries = sorted(resolved.iterdir(), key=lambda e: e.name)
+            except FileNotFoundError:
+                return _tool_policy_denial("resource_not_found", "Verzeichnis wurde nicht gefunden.")
+            except NotADirectoryError:
+                return _tool_policy_denial("directory_expected", "BLOCKIERT: Ein Verzeichnis ist erforderlich.")
+            except PermissionError:
+                return _tool_policy_denial("path_not_authorized", "BLOCKIERT: Keine Leseberechtigung für dieses Verzeichnis.")
             except OSError:
                 return _tool_effect_unconfirmed()
             details = args.get("details")
@@ -2186,7 +2238,11 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             if require_task_binding:
                 return ToolErrorText("Taskbindung fehlt; Taskoperation nicht ausgeführt.", code="task_binding_required")
             if args.get("action") == "done" and args.get("result") is not None:
-                return _tool_policy_denial("task_binding_required", "Taskergebnis braucht eine gebundene Worker-Task; Abschluss nicht ausgeführt.")
+                return _tool_policy_denial(
+                    "task_binding_required",
+                    "Taskergebnis braucht eine gebundene Worker-Task; Abschluss nicht ausgeführt. "
+                    "Im freien Chat für action='done' den Parameter 'result' weglassen (nur task_id übergeben).",
+                )
             action = args.get("action", "list")
             runtime_db = _current_runtime_db()
             task_audit_fn = _current_apply_task_field_changes()
@@ -2291,6 +2347,21 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         for fld in ("title", "description", "category", "priority", "status", "depends_on", "assigned_to"):
                             if fld in args and args[fld] is not None:
                                 updates[fld] = args[fld]
+                        if "append_description" in args and args["append_description"] is not None:
+                            append_text = args["append_description"]
+                            if not isinstance(append_text, str) or not append_text.strip():
+                                return _tool_policy_denial("invalid_arguments", "BLOCKIERT: append_description benötigt einen nicht leeren Text.")
+                            base_desc = str(updates.get("description") if "description" in updates else (existing["description"] or "")).rstrip()
+                            updates["description"] = f"{base_desc}\n\n{append_text.strip()}" if base_desc else append_text.strip()
+                        if (
+                            "assigned_slot" in args
+                            and isinstance(args["assigned_slot"], str)
+                            and args["assigned_slot"].strip() in {"buddha_chat", "buddha_connector", "buddha_talk"}
+                        ):
+                                return _tool_policy_denial(
+                                    "invalid_arguments",
+                                    "BLOCKIERT: Interface-Steckplätze (z. B. buddha_chat) sind keine Hintergrund-Worker und können nicht als assigned_slot zugewiesen werden.",
+                                )
                         if "result_max_chars" in args:
                             from hub._services.task_result_service import validate_submission
                             try:
@@ -2588,10 +2659,16 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             target = args.get("target", "")
             prompt = args.get("prompt", "")
             context = args.get("context", "")
-            if target not in ("claude", "codex"):
+            model = args.get("model", "")
+            if target not in ("claude", "codex", "agy"):
                 return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Delegationsziel ist ungültig.")
             if not prompt:
                 return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Delegationsanfrage fehlt.")
+            if model is not None and model != "":
+                if not isinstance(model, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}", model):
+                    return _tool_policy_denial("invalid_arguments", "BLOCKIERT: Ungültiger Modellname für Delegation.")
+            else:
+                model = ""
             depth = int(os.environ.get("BACH_DELEGATION_DEPTH", "0"))
             if depth >= 2:
                 return _tool_policy_denial("state_conflict", "BLOCKIERT: Maximale Delegationstiefe erreicht.")
@@ -2608,10 +2685,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                     if kf.exists():
                         api_key = kf.read_text(encoding="utf-8").strip()
                 if api_key:
-                    return _delegate_claude_api(full_prompt, api_key)
-                cmd = ["claude", "-p", full_prompt]
+                    return _delegate_claude_api(full_prompt, api_key, model=model) if model else _delegate_claude_api(full_prompt, api_key)
+                cmd = ["claude"] + (["--model", model] if model else []) + ["-p", full_prompt]
+            elif target == "agy":
+                cmd = ["agy"] + ([f"--model={model}"] if model else []) + ["--print", full_prompt]
             else:
-                cmd = ["codex", "exec", full_prompt]
+                cmd = ["codex", "exec"] + (["-m", model] if model else []) + [full_prompt]
             try:
                 r = subprocess.run(
                     cmd, capture_output=True, text=True,

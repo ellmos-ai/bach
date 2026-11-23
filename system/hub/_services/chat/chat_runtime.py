@@ -944,9 +944,11 @@ class ChatRuntime(_ModuleChatRuntime):
 
     def __init__(self, backend, system_prompt: str = "",
                  bach_app=None, memory_fn=None, injector=None,
-                 session_store=None, agent_operations=None):
+                 session_store=None, agent_operations=None,
+                 base_system_reader=None):
         self.backend = backend
         self.base_system = system_prompt
+        self._base_system_reader = base_system_reader
         self.bach_app = bach_app
         self.memory = memory_fn
         self.injector = injector
@@ -3242,10 +3244,11 @@ SAFE-MODUS (Standard):
 - web_search — Im Internet suchen (DuckDuckGo)
 - web_fetch — Inhalt einer URL abrufen (Webseite, API, JSON)
 - weather — Aktuelles Wetter abfragen
-- task_manage — Tasks anlegen, auflisten, erledigen
+- task_manage — Tasks anlegen, auflisten, aktualisieren (`append_description` erhält Text), im freien Chat via `done` ohne `result` erledigen
+- agent_manage — Steckplätze/Modelle live prüfen (`list`), Blueprints anlegen, Living materialisieren, lokale Worker starten (`start_local`, nur lokal)
 - maintain — Systemwartung: fällige Tasks (check), Wartung (run), BACH-Status (health), Service-Check (services)
 - foerderbericht — Förderbericht-Pipeline: Anonymisierung (prepare), Status (status), Aufräumen (cleanup)
-- delegate — Aufgabe an Claude Code oder Codex CLI delegieren
+- delegate — Aufgabe an externe CLI-Agenten delegieren (`claude`, `codex` oder `agy` für Antigravity/Gemini)
 
 FULL-MODUS (nur nach /mode full bestätigt):
 - execute_command — Beliebige Shell-Befehle
@@ -3260,21 +3263,19 @@ BACH-HANDLER (alle via bach_command nutzbar):
 - mem write/read/fact/facts/search/context — Memory-System
 - lesson add/list — Lessons Learned
 - mediplaner export/import/help — JSON-Austausch zwischen BACH-Gesundheitsdaten und MediPlaner
-- help <thema> — Dokumentation zu jedem Thema (260+ Help-Dateien)
+- help <thema> — Lebende Systemdokumentation zu allen Themen
 
-WICHTIGSTE REGEL — SUCHE ALS FALLBACK:
-Wenn der User einen Service, ein Tool oder eine Funktion anfragt die du nicht kennst:
-1. ZUERST: bach_command mit "help <thema>" nutzen — findet die passende Dokumentation
-2. DANN: bach_command mit "search <begriff>" — durchsucht Handler, Tools und Skills
-3. NIEMALS sagen "das kann ich nicht" ohne vorher gesucht zu haben
-BACH hat 110+ Handler — du kennst hier nur die wichtigsten. Die Suche findet den Rest.
+WICHTIGSTE REGEL — SELBSTHEILENDE LIVE-PRÜFUNG STATT RATEN:
+Wenn der User nach Systemregeln, Diensten, Steckplätzen, externen CLI-Konsolen oder Funktionen fragt, die du nicht sicher kennst:
+1. ZUERST: Relevante Steuerdateien (`~/CLAUDE.md`, `~/OneDrive/CLAUDE.md`, `~/OneDrive/SYSTEM-MANIFEST.md`, `~/OneDrive/.SYNC/MAC_STUDIO_SERVICES.md`) mit `read_file` bzw. Live-Zustand über `agent_manage(action='list')`, `ollama_info`, `system_status` oder `bach_command` (`help <thema>`, `search <begriff>`) prüfen
+2. NIEMALS sagen „das gibt es nicht“ oder „das kann ich nicht“, ohne vorher live geprüft zu haben
 
 REGELN:
 - Nutze Tools aktiv, wenn der User nach Informationen fragt
 - Nutze web_search, wenn du aktuelle Informationen brauchst oder der User fragt
 - Nutze task_manage, wenn der User Tasks verwalten will
 - Nutze maintain, wenn der User nach Systemstatus, Wartung oder Health fragt
-- Nutze delegate, wenn eine Aufgabe besser von Claude (Coding, Analyse) oder Codex (schnelle Code-Generierung) erledigt wird
+- Nutze delegate, wenn eine Aufgabe besser von Claude, Codex oder Antigravity (`agy`/Gemini) erledigt wird
 - Nutze edit_file zum Bearbeiten von Dateien (suchen/ersetzen)
 - Nutze recycle zum Löschen — verschiebt in den Papierkorb statt endgültig zu löschen
 - Nutze weather für Wetterabfragen
@@ -3292,7 +3293,7 @@ TURN-BUDGET, MEHRDEUTIGKEIT & DELEGATION (4-STUFEN-PRIORITÄT):
 - 1. DIREKT LÖSEN: Wenn das Problem klar und überschaubar ist, direkt umsetzen und testen.
 - 2. TEILERFOLG ODER ZERLEGEN: Hast du einen sauberen Teil (z. B. 50 %) fertig, lege für den offenen Rest mit task_manage(action='add', title='Rest: ...', description='...') eine Folgetask an, begrenze die aktuelle Task per task_manage(action='update', task_id=<ID>, description='...') auf das Geschaffte und schließe sie mit submit_result(complete=true) ab. Ist die Aufgabe unmachbar/blockiert, gib sie ohne Zerlegung mit submit_result(complete=false) zurück. Nur bei noch unbegonnenem Großumfang einmalig mit task_manage(action='decompose', task_id=<ID>, subtasks=[{"title": "...", "description": "Datei, Stelle, nächste Schritte"}], sequential=true, close_parent=false) gliedern.
 - 3. MEHRDEUTIGKEIT: Bei knappen/mehrdeutigen Aufgaben zuerst Code-Präzedenzfälle suchen und immer die minimal-invasive, risikoärmste Option wählen. Bei anhaltender Unsicherheit nach 3-5 Runden: Rückfrage mit task_manage(category='TO-DECIDE') anlegen.
-- 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude/Codex), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
+- 4. DELEGIEREN & ABLEHNEN (Ultima Ratio): Erst delegieren (via delegate an Claude, Codex oder Antigravity/agy), wenn Modellgrenzen oder Werkzeuge nachweislich überschritten sind. Niemals voreilig ablehnen oder Aufgaben abwälzen!
 
 WARTUNGSROLLE:
 Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
@@ -3301,6 +3302,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
 - maintain(health) zeigt den Gesamtstatus
 """
         base = self.base_system
+        reader = getattr(self, "_base_system_reader", None)
+        if callable(reader):
+            try:
+                live_base = reader()
+                if isinstance(live_base, str) and live_base.strip():
+                    base = live_base
+            except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+                log.debug("Dynamischer base_system_reader fehlgeschlagen, Fallback aktiv: %s", exc)
         if profile_context:
             base += ("\n\nDu bist das ausdrücklich ausgewählte BACH-Agentenprofil. Antworte auf Deutsch. "
                      "Die globalen Modus- und Werkzeuggrenzen gelten unverändert.")
