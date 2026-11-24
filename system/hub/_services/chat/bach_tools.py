@@ -1146,6 +1146,8 @@ TOOLS_SAFE = [
         "assigned_slot": {"type": "string", "description": "Verfügbarer Hintergrund-Worker-Steckplatz aus agent_manage action=list (keine Interface-Slots wie buddha_chat)"},
         "required_model": {"type": "string", "description": "Optionale feste Modellbindung"},
         "result_max_chars": {"type": "integer", "description": "Optionales Task-Ausgabelimit von 1 bis 3000 Zeichen; bei task_manage(update) weglassen zum Beibehalten"},
+        "repository": {"type": "string", "description": "Optionales Ziel-Repository bei add (Standard: kanonisches Standard-Repo, z.B. ellmos-ai/bach)"},
+        "bind_repository": {"type": "boolean", "description": "Standardmäßig true: bindet neu erstellte Tasks direkt an die vertrauenswürdige Worker-Repo-Registry"},
         "subtasks": {
             "type": "array",
             "items": {
@@ -2265,6 +2267,23 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                         title = args.get("title", "")
                         if not isinstance(title, str) or not title.strip():
                             return _tool_policy_denial("invalid_arguments", "Kein Titel angegeben")
+                        bind_repository = args.get("bind_repository", True)
+                        if type(bind_repository) is not bool:
+                            return ToolErrorText("bind_repository muss ein boolescher Wert sein.", code="invalid_task_arguments")
+                        raw_repo = args.get("repository")
+                        explicit_repo = None
+                        if raw_repo is not None:
+                            if type(raw_repo) is not str:
+                                return ToolErrorText("repository muss eine kanonische Repository-ID sein.", code="invalid_task_arguments")
+                            if raw_repo.strip():
+                                from hub._services.chat.worker_repo_registry import (
+                                    RepositoryBindingError,
+                                    validate_creatable_repository,
+                                )
+                                try:
+                                    explicit_repo = validate_creatable_repository(raw_repo.strip())
+                                except RepositoryBindingError as exc:
+                                    return ToolErrorText(str(exc), code="invalid_task_arguments")
                         prio = args.get("priority", "P3")
                         assignee = args.get("assigned_to") or "bach"
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2284,9 +2303,28 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                             values["result_max_chars"] = args["result_max_chars"]
                         cur = conn.execute("INSERT INTO tasks (" + ", ".join(values) + ") VALUES ("
                             + ", ".join("?" for _ in values) + ")", list(values.values()))
+                        task_id = cur.lastrowid
+                        db_file = next(
+                            (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+                            None,
+                        )
                         conn.commit()
+                        conn.close()
+                        binding_note = ""
+                        if bind_repository:
+                            from hub._services.chat.worker_repo_registry import try_auto_enroll_created_task
+                            binding = try_auto_enroll_created_task(
+                                task_id,
+                                db_path=db_file,
+                                repository=explicit_repo,
+                                operator="operator:bach-chat-tool",
+                            )
+                            if binding.get("state") in {"enrolled", "already_bound"}:
+                                binding_note = f" [Repo: {binding['repository']}]"
+                            elif binding.get("state") == "unavailable":
+                                binding_note = f" [Repo-Bindung ausstehend: {binding.get('reason_code')}]"
                         zusatz = f" [{args['category']}]" if args.get("category") else ""
-                        return f"Task #{cur.lastrowid} erstellt: {title} ({prio}){zusatz}"
+                        return f"Task #{task_id} erstellt: {title} ({prio}){zusatz}{binding_note}"
 
                     if action == "done":
                         tid = args.get("task_id")

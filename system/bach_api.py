@@ -287,6 +287,8 @@ class _TaskProxy(_DBBackedProxy):
         assigned_slot: str | None = None,
         assigned_to: str | None = None,
         creation_origin: str | None = None,
+        repository: str | None = None,
+        bind_repository: bool = True,
     ) -> dict[str, Any]:
         cli_priority = priority
         cli_description = description
@@ -296,6 +298,8 @@ class _TaskProxy(_DBBackedProxy):
         cli_assigned_slot = assigned_slot
         cli_assigned_to = assigned_to
         cli_creation_origin = creation_origin
+        cli_repository = repository
+        cli_bind_repository = bind_repository
 
         i = 0
         while i < len(args):
@@ -349,6 +353,15 @@ class _TaskProxy(_DBBackedProxy):
             elif arg.startswith("--creation-origin="):
                 cli_creation_origin = arg.split("=", 1)[1]
                 i += 1
+            elif arg == "--repository" and i + 1 < len(args):
+                cli_repository = str(args[i + 1])
+                i += 2
+            elif arg.startswith("--repository="):
+                cli_repository = arg.split("=", 1)[1]
+                i += 1
+            elif arg == "--no-repo-bind":
+                cli_bind_repository = False
+                i += 1
             else:
                 i += 1
 
@@ -367,6 +380,10 @@ class _TaskProxy(_DBBackedProxy):
             raw_args.extend(["--assigned", cli_assigned_to])
         if cli_creation_origin is not None:
             raw_args.extend(["--creation-origin", cli_creation_origin])
+        if cli_repository is not None:
+            raw_args.extend(["--repository", cli_repository])
+        if not cli_bind_repository:
+            raw_args.append("--no-repo-bind")
 
         success, message = self.raw("add", *raw_args)
         if not success:

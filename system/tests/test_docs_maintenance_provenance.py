@@ -183,10 +183,12 @@ def test_unknown_same_title_task_is_not_adopted(native):
     native.proxy.add(f"Doku-Delta root {root_id} {native.revision[:12]}",
         description=dispatcher._analysis_description("root", native.revision, ["docs/README.md"]),
         category="WORKER", assigned_to="BACH")
+    before = registry.registry_path().read_bytes()
     with pytest.raises(RuntimeError, match="maintenance_provenance_unavailable"):
         dispatcher.dispatch()
     assert len(native.rows()) == 1
-    assert registry.load_registry()["tasks"] == {}
+    assert native.rows("maintenance_task_intents") == []
+    assert registry.registry_path().read_bytes() == before
 
 
 def _failed_enrollment(native, monkeypatch):
@@ -331,7 +333,8 @@ def test_legacy_reference_requires_explicit_operator_enrollment(native):
     from hub._services.task_lease_client import TaskLeaseClient
     dispatcher = native.dispatcher()
     legacy = native.proxy.add("Existing verified maintenance inventory item", assigned_to="BACH",
-                              category="WORKER", description="Operator checked old documentation task")
+                              category="WORKER", description="Operator checked old documentation task",
+                              bind_repository=False)
     dispatcher.state_path.parent.mkdir()
     dispatcher.state_path.write_text(json.dumps({"schema": "bach.docs-maintenance.v1",
         "packages": {"root": {"task_id": legacy["id"], "revision": native.revision}}}))
