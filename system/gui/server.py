@@ -2787,6 +2787,24 @@ async def api_post_task(payload: dict = Body(...)):
             result_max_chars = payload.get("result_max_chars")
             if result_max_chars is not None and (type(result_max_chars) is not int or not 1 <= result_max_chars <= 3000):
                 raise HTTPException(status_code=422, detail={"code": "result_limit_invalid", "message": "result_max_chars muss null oder eine Ganzzahl von 1 bis 3000 sein"})
+            bind_repository = payload.get("bind_repository", True)
+            if type(bind_repository) is not bool:
+                raise HTTPException(status_code=422, detail={"code": "repository_binding_invalid", "message": "bind_repository muss ein boolescher Wert sein"})
+            raw_repository = payload.get("repository")
+            explicit_repository = None
+            if raw_repository is not None:
+                if type(raw_repository) is not str:
+                    raise HTTPException(status_code=422, detail={"code": "repository_invalid", "message": "repository muss eine kanonische Repository-ID sein"})
+                cleaned_repository = raw_repository.strip()
+                if cleaned_repository:
+                    from hub._services.chat.worker_repo_registry import (
+                        RepositoryBindingError,
+                        validate_creatable_repository,
+                    )
+                    try:
+                        explicit_repository = validate_creatable_repository(cleaned_repository)
+                    except RepositoryBindingError as exc:
+                        raise HTTPException(status_code=422, detail={"code": exc.reason_code, "message": str(exc)})
             completion_fields = _completion_task_fields(payload)
             draft_source = payload.get("source") or payload.get("draft_hash")
             if draft_source:
@@ -2840,9 +2858,23 @@ async def api_post_task(payload: dict = Body(...)):
             ))
 
             task_id = cursor.lastrowid
+            db_file = next(
+                (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+                None,
+            )
             conn.commit()
             conn.close()
-            return {"success": True, "id": task_id, "status": "created"}
+            if bind_repository:
+                from hub._services.chat.worker_repo_registry import try_auto_enroll_created_task
+                repository_binding = try_auto_enroll_created_task(
+                    task_id,
+                    db_path=db_file,
+                    repository=explicit_repository,
+                    operator="operator:bach-gui-api",
+                )
+            else:
+                repository_binding = {"state": "skipped", "reason_code": "opt_out", "task_id": task_id, "task_mutated": False}
+            return {"success": True, "id": task_id, "status": "created", "repository_binding": repository_binding}
     except HTTPException:
         raise
     except Exception as e:
@@ -7349,19 +7381,31 @@ async def denkarium_promote(entry_id: int, request: Request):
         with _notes_http_errors():
             note = notes_adapter.get_note(entry_id)
         conn = sqlite3.connect(str(USER_DB))
+        db_file = None
         try:
             cur = conn.execute("INSERT INTO tasks (title, description, status, priority, assigned_to, dist_type) VALUES (?, ?, 'pending', 3, 'user', 0)",
                 (note["title"] or note["content"][:50] or "Denkarium-Eintrag", note["content"]))
+            db_file = next(
+                (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+                None,
+            )
             conn.commit()
             promoted_id = cur.lastrowid
         except (sqlite3.OperationalError, sqlite3.DatabaseError):
             return JSONResponse(status_code=500, content={"ok": False, "error": public_error_message()})
         finally:
             conn.close()
+        from hub._services.chat.worker_repo_registry import try_auto_enroll_created_task
+        repository_binding = try_auto_enroll_created_task(
+            promoted_id,
+            db_path=db_file,
+            operator="operator:bach-denkarium-promote",
+        )
         notes_adapter.mark_promoted(entry_id, target, promoted_id)
-        return {"ok": True, "promoted_id": promoted_id}
+        return {"ok": True, "promoted_id": promoted_id, "repository_binding": repository_binding}
 
     conn = sqlite3.connect(str(USER_DB))
+    db_file = None
 
     try:
 
@@ -7391,6 +7435,10 @@ async def denkarium_promote(entry_id: int, request: Request):
 
             (target, promoted_id, datetime.now().isoformat(), entry_id))
 
+        db_file = next(
+            (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+            None,
+        )
         conn.commit()
 
     except HTTPException:
@@ -7405,7 +7453,13 @@ async def denkarium_promote(entry_id: int, request: Request):
 
         conn.close()
 
-    return {"ok": True, "promoted_id": promoted_id}
+    from hub._services.chat.worker_repo_registry import try_auto_enroll_created_task
+    repository_binding = try_auto_enroll_created_task(
+        promoted_id,
+        db_path=db_file,
+        operator="operator:bach-denkarium-promote",
+    )
+    return {"ok": True, "promoted_id": promoted_id, "repository_binding": repository_binding}
 
 
 

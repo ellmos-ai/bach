@@ -220,6 +220,8 @@ class TaskCreate(BaseModel):
     required_model: Optional[str] = None
     assigned_slot: Optional[str] = None
     result_max_chars: Optional[StrictInt] = None
+    repository: Optional[str] = None
+    bind_repository: bool = True
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -279,7 +281,19 @@ async def list_tasks(status: str = "pending", limit: int = 50,
 
 @app.post("/api/v1/tasks", status_code=201)
 async def create_task(task: TaskCreate, _=Depends(verify_auth)):
+    explicit_repository = None
+    if task.repository is not None and task.repository.strip():
+        from hub._services.chat.worker_repo_registry import (
+            RepositoryBindingError,
+            validate_creatable_repository,
+        )
+        try:
+            explicit_repository = validate_creatable_repository(task.repository.strip())
+        except RepositoryBindingError as exc:
+            raise HTTPException(422, {"code": exc.reason_code, "message": str(exc)})
     conn = _get_db()
+    task_id = None
+    db_file = None
     try:
         from hub._services.task_schema import ensure_task_result_contract_columns, ensure_task_slot_columns
         ensure_task_slot_columns(conn)
@@ -293,10 +307,25 @@ async def create_task(task: TaskCreate, _=Depends(verify_auth)):
         """, (task.title, task.priority, task.category,
               task.assigned_to or DEFAULT_TASK_ASSIGNEE, task.description,
               task.required_model or None, task.assigned_slot or None, task.result_max_chars, now, now))
+        task_id = cur.lastrowid
+        db_file = next(
+            (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+            None,
+        )
         conn.commit()
-        return {"id": cur.lastrowid, "title": task.title, "status": "pending"}
     finally:
         conn.close()
+    if task.bind_repository:
+        from hub._services.chat.worker_repo_registry import try_auto_enroll_created_task
+        repository_binding = try_auto_enroll_created_task(
+            task_id,
+            db_path=db_file,
+            repository=explicit_repository,
+            operator="operator:bach-headless-api",
+        )
+    else:
+        repository_binding = {"state": "skipped", "reason_code": "opt_out", "task_id": task_id, "task_mutated": False}
+    return {"id": task_id, "title": task.title, "status": "pending", "repository_binding": repository_binding}
 
 
 @app.get("/api/v1/task-capabilities")

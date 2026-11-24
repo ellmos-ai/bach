@@ -6,24 +6,29 @@ read it; source provisioning is an explicit operator action implemented in
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import os
 import re
-import stat
-import hashlib
-import tempfile
 import sqlite3
-from datetime import datetime, timezone
+import stat
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 REGISTRY_SCHEMA = "bach.worker-repo-registry.v1"
 ENROLLED_SCHEMA = "bach.worker-repo-registry.v2"
+DEFAULT_TASK_REPOSITORY = "ellmos-ai/bach"
 _REPOSITORY_ID = re.compile(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\Z")
 _TASK_ID = re.compile(r"[1-9][0-9]{0,18}\Z")
 _SHA = re.compile(r"[0-9a-f]{40}\Z")
 _BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\Z")
+_OPERATOR_ID = re.compile(r"operator:[A-Za-z0-9][A-Za-z0-9_.@-]{0,99}\Z")
 _MAX_REGISTRY_BYTES = 1_048_576
+_log = logging.getLogger(__name__)
 
 
 class RepositoryBindingError(RuntimeError):
@@ -473,17 +478,18 @@ class _RegistryWriter:
     def __exit__(self, *_):
         if self.descriptor is None:
             return
+        descriptor = self.descriptor
+        self.descriptor = None
         try:
-            try:
-                current = self.marker.lstat()
-            except OSError:
-                current = None
+            current = self.marker.lstat()
+        except OSError:
+            current = None
+        try:
+            os.close(descriptor)
+        finally:
             if (current is not None and self.identity is not None
                     and (current.st_dev, current.st_ino) == (self.identity.st_dev, self.identity.st_ino)):
-                self.marker.unlink()
-        finally:
-            os.close(self.descriptor)
-            self.descriptor = None
+                self.marker.unlink(missing_ok=True)
 
 
 def _canonical_review_client(client):
@@ -914,3 +920,370 @@ def enroll_maintenance_task_repository(client, task_id, *, expected_registry_sha
                     "task_mutated": False}
     finally:
         conn.close()
+
+
+def validate_creatable_repository(repository) -> str:
+    """Validate an explicit repository selected during task creation (fail-closed)."""
+    selected = canonical_repository_id(repository)
+    path = registry_path()
+    if path.exists():
+        data = load_registry(path)
+        if selected not in data["repositories"]:
+            raise RepositoryBindingError(
+                "Projekt-Repository ist nicht kanonisch registriert",
+                reason_code="repository_not_registered",
+            )
+    return selected
+
+
+def _resolve_default_repository(data: dict, explicit_repository: str | None = None) -> str:
+    repositories = data["repositories"]
+    if explicit_repository is not None:
+        selected = canonical_repository_id(explicit_repository)
+        if selected not in repositories:
+            raise RepositoryBindingError(
+                "Projekt-Repository ist nicht kanonisch registriert",
+                reason_code="repository_not_registered",
+            )
+        return selected
+    configured = os.environ.get("BACH_DEFAULT_TASK_REPOSITORY", "").strip()
+    if configured:
+        selected = canonical_repository_id(configured)
+        if selected not in repositories:
+            raise RepositoryBindingError(
+                "Konfiguriertes Standard-Repository ist nicht registriert",
+                reason_code="repository_not_registered",
+            )
+        return selected
+    if DEFAULT_TASK_REPOSITORY in repositories:
+        return DEFAULT_TASK_REPOSITORY
+    if len(repositories) == 1:
+        return next(iter(repositories))
+    raise RepositoryBindingError(
+        "Standard-Repository ist nicht eindeutig bestimmbar",
+        reason_code="default_repository_ambiguous",
+    )
+
+
+def _clone_commit_timestamp(clone_path: Path, default_branch: str) -> int:
+    try:
+        branch = canonical_default_branch(default_branch)
+        result = subprocess.run(
+            ["git", "show", "-s", "--format=%ct", f"refs/heads/{branch}^{{commit}}"],
+            cwd=str(clone_path),
+            shell=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0 and (result.stdout or "").strip().isdigit():
+            return int(result.stdout.strip())
+    except (OSError, ValueError, subprocess.SubprocessError, RepositoryBindingError):
+        return 0
+    return 0
+
+
+def _proof_matches(proof, *, repository: str, record: dict, source_sha: str) -> bool:
+    expected = {
+        "schema": "bach.task-public-source.v2",
+        "repository": repository,
+        "origin": record["origin"],
+        "source_sha": source_sha,
+        "source_ref": f"refs/heads/{record['default_branch']}",
+        "visibility": "public",
+        "private": False,
+        "metadata_verified": True,
+        "ref_verified": True,
+    }
+    return (
+        isinstance(proof, dict)
+        and all(proof.get(k) == value for k, value in expected.items())
+        and proof.get("private") is False
+        and proof.get("metadata_verified") is True
+        and proof.get("ref_verified") is True
+    )
+
+
+def _select_verified_source_clone(
+    tid: int,
+    repository: str,
+    record: dict,
+    *,
+    require_current: bool = False,
+) -> tuple[str, Path, dict]:
+    """Choose and verify an existing operator-provisioned immutable public clone.
+
+    Never downloads, clones, or mutates repositories. Prefers the live/current
+    default-branch SHA if already provisioned; otherwise picks the newest clean
+    operator-provisioned clone for the registered repository.
+    """
+    from hub import worker_git
+
+    from .worker_write_guard import _scan_locks, has_blocking_hook_guards
+
+    owner, name = repository.split("/", 1)
+    root = source_root()
+    owner_dir = root / owner
+    repo_dir = owner_dir / name
+    for directory in (root, owner_dir, repo_dir):
+        if directory.is_symlink() or not directory.is_dir():
+            raise RepositoryBindingError(
+                "Verifizierter Public-Source-Clone fehlt",
+                reason_code="source_clone_missing",
+            )
+    candidates: list[str] = []
+    try:
+        for entry in repo_dir.iterdir():
+            if not entry.is_symlink() and entry.is_dir() and _SHA.fullmatch(entry.name):
+                candidates.append(entry.name)
+    except OSError:
+        raise RepositoryBindingError(
+            "Public-Source-Verzeichnis ist nicht lesbar",
+            reason_code="source_clone_missing",
+        ) from None
+    if not candidates:
+        raise RepositoryBindingError(
+            "Kein provisionierter Public-Source-Clone vorhanden",
+            reason_code="source_clone_missing",
+        )
+
+    preferred: list[str] = []
+    if require_current:
+        try:
+            meta = worker_git._public_default_branch_metadata(repository, record["default_branch"])
+            current_sha = meta.get("source_sha") if isinstance(meta, dict) else None
+        except Exception:  # noqa: BLE001
+            current_sha = None
+        if not isinstance(current_sha, str) or current_sha not in candidates:
+            raise RepositoryBindingError(
+                "Aktueller Public-Source-Clone fehlt",
+                reason_code="source_clone_missing",
+            )
+        ordered = [current_sha]
+    else:
+        try:
+            live_root = worker_git.get_live_repo_root()
+            if live_root.is_dir() and not live_root.is_symlink():
+                live_origin = worker_git._canonical_public_origin(
+                    worker_git._git_text(live_root, "origin"), repository
+                )
+                if live_origin == record["origin"]:
+                    live_sha = worker_git._git_text(live_root, "head")
+                    if live_sha in candidates:
+                        preferred.append(live_sha)
+        except (OSError, RuntimeError, ValueError):
+            preferred = []
+
+        def sort_key(sha: str) -> tuple[int, float, str]:
+            clone_dir = repo_dir / sha
+            try:
+                mtime = clone_dir.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            return (_clone_commit_timestamp(clone_dir, record["default_branch"]), mtime, sha)
+
+        remaining = [sha for sha in candidates if sha not in preferred]
+        remaining.sort(key=sort_key, reverse=True)
+        ordered = [*preferred, *remaining]
+
+    validate_source = getattr(worker_git, "_validate_pinned_source_clone", None)
+    physical_source = getattr(worker_git, "_safe_source_clone_path", None)
+    if not callable(validate_source) or not callable(physical_source):
+        raise RepositoryBindingError(
+            "Installierter Sourceowner unterstützt keine gepinnte Enrollmentprüfung",
+            reason_code="source_unverified",
+        )
+
+    for sha in ordered:
+        binding = RepositoryBinding(tid, repository, record["origin"], record["default_branch"], sha)
+        try:
+            source = physical_source(binding)
+            if source != source_clone_path(repository, sha):
+                raise ValueError
+            if has_blocking_hook_guards(_scan_locks(source), source):
+                raise ValueError
+            proof = validate_source(source, binding, require_current=require_current)
+            if not _proof_matches(proof, repository=repository, record=record, source_sha=sha):
+                raise ValueError
+            return sha, source, proof
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError):
+            continue
+
+    raise RepositoryBindingError(
+        "Kein verifizierter Public-Source-Clone bestätigt",
+        reason_code="source_unverified",
+    )
+
+
+def auto_enroll_created_task(
+    task_id,
+    *,
+    db_path: str | Path | None = None,
+    repository: str | None = None,
+    operator: str = "operator:bach-task-create",
+    require_current: bool = False,
+) -> dict:
+    """Bind a newly created canonical task to its trusted public repository.
+
+    Only operates on the canonical per-user ``~/.bach/bach.db`` and an existing
+    valid ``~/.bach/worker_repo_registry.v1.json``. Non-canonical/test databases
+    and hosts without a repo registry return ``state='skipped'`` without touching
+    host state. Uses the shared ``.operator-lock`` fence and cross-store CAS.
+    """
+    from hub import worker_git
+    from hub._services.task_lease import task_content_version
+
+    from .worker_write_guard import _scan_locks, has_blocking_hook_guards
+
+    tid = canonical_task_id(task_id)
+    if type(operator) is not str or _OPERATOR_ID.fullmatch(operator) is None:
+        raise RepositoryBindingError("Ungültige Operator-Kennung", reason_code="operator_invalid")
+    path = registry_path()
+    if not path.exists():
+        return {"state": "skipped", "reason_code": "registry_absent", "task_id": tid, "task_mutated": False}
+
+    database = Path.home() / ".bach" / "bach.db"
+    if db_path is not None:
+        raw_db = str(db_path).strip()
+        if not raw_db:
+            return {"state": "skipped", "reason_code": "non_canonical_db", "task_id": tid, "task_mutated": False}
+        try:
+            if not database.exists() or Path(raw_db).resolve(strict=False) != database.resolve(strict=False):
+                return {"state": "skipped", "reason_code": "non_canonical_db", "task_id": tid, "task_mutated": False}
+        except OSError:
+            return {"state": "skipped", "reason_code": "non_canonical_db", "task_id": tid, "task_mutated": False}
+
+    try:
+        identity = database.lstat()
+        if (database.is_symlink() or database.resolve(strict=True) != database
+                or not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1
+                or os.name != "nt" and identity.st_uid != os.getuid()):
+            raise OSError
+    except OSError:
+        raise RepositoryBindingError("Kanonische Lead-Datei nicht bestätigt",
+                                     reason_code="canonical_lead_required") from None
+
+    try:
+        conn = sqlite3.connect(database.as_uri() + "?mode=rw", uri=True, timeout=5.0)
+    except sqlite3.Error:
+        raise RepositoryBindingError("Kanonische Lead-Datei nicht erreichbar",
+                                     reason_code="canonical_lead_required") from None
+    conn.row_factory = sqlite3.Row
+    try:
+        with _RegistryWriter() as writer:
+            _assert_database_identity(database, identity)
+            data = load_registry()
+            existing = data["tasks"].get(str(tid))
+            if existing is not None:
+                if repository is not None and existing.get("repository") != canonical_repository_id(repository):
+                    raise RepositoryBindingError(
+                        "Vorhandene Taskbindung widerspricht dem angeforderten Repository",
+                        reason_code="binding_conflict",
+                    )
+                writer.assert_current()
+                _assert_database_identity(database, identity)
+                return {
+                    "state": "already_bound",
+                    "task_id": tid,
+                    "repository": existing["repository"],
+                    "source_sha": existing["source_sha"],
+                    "task_mutated": False,
+                }
+
+            selected_repo = _resolve_default_repository(data, explicit_repository=repository)
+            record = data["repositories"][selected_repo]
+            sha, source, proof = _select_verified_source_clone(
+                tid, selected_repo, record, require_current=require_current
+            )
+
+            # Re-verify source and fences outside the SQLite write transaction.
+            binding = RepositoryBinding(tid, selected_repo, record["origin"], record["default_branch"], sha)
+            try:
+                if worker_git._safe_source_clone_path(binding) != source:
+                    raise ValueError
+                if has_blocking_hook_guards(_scan_locks(source), source):
+                    raise ValueError
+                rechecked = worker_git._validate_pinned_source_clone(
+                    source, binding, require_current=require_current
+                )
+                if not _proof_matches(rechecked, repository=selected_repo, record=record, source_sha=sha):
+                    raise ValueError
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError):
+                raise RepositoryBindingError(
+                    "Public-Source-Owner bestätigt die Zuordnung nicht",
+                    reason_code="source_unverified",
+                ) from None
+
+            writer.check_fences()
+            _assert_database_identity(database, identity)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,)).fetchone()
+                if row is None:
+                    raise RepositoryBindingError("Task nicht gefunden", reason_code="task_not_found")
+                task = dict(row)
+                if task.get("status") not in {"pending", "open"} or task.get("claim_id"):
+                    raise RepositoryBindingError("Task ist nicht frei und ausstehend", reason_code="task_not_pending")
+                task_version = task_content_version(task)
+                _assert_database_identity(database, identity)
+                writer.assert_current()
+                registered_at = datetime.now(timezone.utc).isoformat()
+                data["schema"] = ENROLLED_SCHEMA
+                data["tasks"][str(tid)] = {
+                    "repository": selected_repo,
+                    "source_sha": sha,
+                    "task_version": task_version,
+                    "operator": operator,
+                    "registered_at": registered_at,
+                    "source_proof_sha256": hashlib.sha256(
+                        json.dumps(proof, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest(),
+                }
+                writer.publish(data)
+            finally:
+                conn.rollback()  # Cross-store CAS only: no task or lease mutation.
+
+            observed = resolve_task_repository(tid)
+            if observed.repository != selected_repo or observed.source_sha != sha:
+                raise RepositoryBindingError("Task-Enrollment-Readback stimmt nicht", reason_code="registry_changed")
+            return {
+                "state": "enrolled",
+                "task_id": tid,
+                "repository": selected_repo,
+                "source_sha": sha,
+                "task_version": task_version,
+                "operator": operator,
+                "registered_at": registered_at,
+                "registry_sha256": hashlib.sha256(_read_registry_bytes(writer.path)).hexdigest(),
+                "task_mutated": False,
+            }
+    finally:
+        conn.close()
+
+
+def try_auto_enroll_created_task(
+    task_id,
+    *,
+    db_path: str | Path | None = None,
+    repository: str | None = None,
+    operator: str = "operator:bach-task-create",
+) -> dict:
+    """Fail-safe wrapper for task creation entry points; never breaks task creation."""
+    try:
+        return auto_enroll_created_task(
+            task_id,
+            db_path=db_path,
+            repository=repository,
+            operator=operator,
+            require_current=False,
+        )
+    except RepositoryBindingError as exc:
+        _log.warning("auto_enroll_created_task_unavailable task_id=%s reason=%s", task_id, exc.reason_code)
+        return {"state": "unavailable", "task_id": task_id, "reason_code": exc.reason_code, "task_mutated": False}
+    except Exception:  # noqa: BLE001 -- Never expose private paths or break task creation.
+        _log.warning("auto_enroll_created_task_unavailable task_id=%s reason=enrollment_failed", task_id)
+        return {"state": "unavailable", "task_id": task_id, "reason_code": "enrollment_failed", "task_mutated": False}

@@ -364,7 +364,7 @@ class TaskHandler(BaseHandler):
                 "Usage: bach task add <titel> [--priority P1-P4] "
                 "[--description TEXT] [--due YYYY-MM-DD] "
                 "[--assigned NAME] [--required-model MODEL] [--assigned-slot SLOT] "
-                "[--result-max-chars 1-3000] [--local|--remote]"
+                "[--result-max-chars 1-3000] [--repository OWNER/REPO] [--no-repo-bind] [--local|--remote]"
             )
         
         title = self._sanitize_title(clean_args[0])
@@ -377,6 +377,8 @@ class TaskHandler(BaseHandler):
         result_max_chars = None
         assigned_to = None
         creation_origin = None
+        repository = None
+        bind_repository = True
         
         # Optionen parsen
         i = 1
@@ -454,8 +456,31 @@ class TaskHandler(BaseHandler):
                 if not assigned_slot:
                     return False, "Fehler: --assigned-slot erwartet einen Wert"
                 i += 1
+            elif clean_args[i] == "--repository":
+                if i + 1 >= len(clean_args) or not clean_args[i + 1].strip():
+                    return False, "Fehler: --repository erwartet eine kanonische Repository-ID (z.B. ellmos-ai/bach)"
+                repository = clean_args[i + 1].strip()
+                i += 2
+            elif clean_args[i].startswith("--repository="):
+                repository = clean_args[i].split("=", 1)[1].strip()
+                if not repository:
+                    return False, "Fehler: --repository erwartet eine kanonische Repository-ID (z.B. ellmos-ai/bach)"
+                i += 1
+            elif clean_args[i] == "--no-repo-bind":
+                bind_repository = False
+                i += 1
             else:
                 i += 1
+
+        if repository is not None:
+            from ._services.chat.worker_repo_registry import (
+                RepositoryBindingError,
+                validate_creatable_repository,
+            )
+            try:
+                repository = validate_creatable_repository(repository)
+            except RepositoryBindingError as exc:
+                return False, f"Fehler: {exc}"
 
         is_isolated_test = (self.db_path != self._canonical_db) or (os.environ.get("BACH_RHEINGOLD_DISABLED") == "1")
         lead_cfg = get_lead_config()
@@ -482,7 +507,10 @@ class TaskHandler(BaseHandler):
                             "result_max_chars": result_max_chars,
                             "creation_origin": creation_origin,
                             "created_by": socket.gethostname().split(".")[0].lower(),
+                            "bind_repository": bind_repository,
                         }
+                        if repository is not None:
+                            payload["repository"] = repository
                         if assigned_to is not None:
                             payload["assigned_to"] = assigned_to
                         ok, res = post_task_to_rheingold(rheingold_url, payload)
@@ -597,9 +625,25 @@ class TaskHandler(BaseHandler):
                 VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, datetime('now'), ?{assignment_value})
             """, (title, priority, category, description, due_date, required_model, assigned_slot, result_max_chars, creation_origin, *assignment_params))
             task_id = cursor.lastrowid
+            db_file = next(
+                (row[2] for row in conn.execute("PRAGMA database_list") if row[1] == "main"),
+                None,
+            )
             if _maintenance_request is not None:
                 producer._record_intent(conn, _maintenance_request, task_id)
             conn.commit()
+
+        binding_text = ""
+        if _maintenance_request is None and bind_repository:
+            from ._services.chat.worker_repo_registry import try_auto_enroll_created_task
+            binding = try_auto_enroll_created_task(
+                task_id,
+                db_path=db_file,
+                repository=repository,
+                operator="operator:bach-task-cli",
+            )
+            if binding.get("state") in {"enrolled", "already_bound"}:
+                binding_text = f" (Repo: {binding['repository']})"
 
         # Hook: after_task_create
         try:
@@ -616,7 +660,7 @@ class TaskHandler(BaseHandler):
             pass
 
         due_text = f" (fällig: {due_date})" if due_date else ""
-        return True, f"[OK] Task {task_id} erstellt: {title}{due_text}"
+        return True, f"[OK] Task {task_id} erstellt: {title}{due_text}{binding_text}"
 
     def _review_backfill(self, args: List[str]) -> Tuple[bool, str]:
         """Local controller backfill: at most --limit new review tasks per run."""
