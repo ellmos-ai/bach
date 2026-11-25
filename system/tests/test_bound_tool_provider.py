@@ -208,3 +208,47 @@ def test_invalid_options_cannot_partially_mutate_content(binding, tail):
                                   "safe", bach_app=NoLegacyTaskApp(), worker_task_binding=binding)
     assert "BLOCKIERT" in result
     assert binding._client.task_snapshot(binding.task_id) == before
+
+
+def test_bound_worker_file_tool_schemas_guide_relative_worktree_paths():
+    bound = {t["function"]["name"]: t for t in bach_tools.tools_for_mode("full", bound_worker=True)}
+    unbound = {t["function"]["name"]: t for t in bach_tools.tools_for_mode("full", bound_worker=False)}
+    for tool_name in ("list_directory", "read_file", "search_text", "write_file", "edit_file"):
+        bound_desc = bound[tool_name]["function"]["parameters"]["properties"]["path"]["description"]
+        unbound_desc = unbound[tool_name]["function"]["parameters"]["properties"]["path"]["description"]
+        assert "relativer Pfad im gebundenen Task-Arbeitsbaum" in bound_desc
+        assert "relativer Pfad im gebundenen Task-Arbeitsbaum" not in unbound_desc
+
+
+def test_task_read_scope_denied_includes_actionable_relative_path_hint(binding, monkeypatch):
+    monkeypatch.setattr(bach_tools, "_task_code_reader_enabled", lambda *_a, **_kw: True)
+    monkeypatch.setattr(
+        bach_tools,
+        "_authorize_task_reader",
+        lambda *_a, **_kw: (_ for _ in ()).throw(RuntimeError("outside worktree")),
+    )
+    for name, args in (
+        ("list_directory", {"path": "/Users/example/live"}),
+        ("read_file", {"path": "/Users/example/live/README.md"}),
+        ("search_text", {"pattern": "foo", "path": "/Users/example/live"}),
+    ):
+        result = bach_tools.exec_tool(name, args, "full", worker_task_binding=binding)
+        assert "BLOCKIERT: Task-Lesebereich nicht bestätigt." in result
+        assert "relative Pfade" in result
+        assert "/Users/example/live" not in result
+
+
+def test_system_status_resolves_sbin_sysctl_when_present(monkeypatch):
+    seen = []
+    real_is_file = bach_tools.Path.is_file
+
+    def fake_is_file(path_obj):
+        if str(path_obj).replace("\\", "/") == "/usr/sbin/sysctl":
+            return True
+        return real_is_file(path_obj)
+
+    monkeypatch.setattr(bach_tools.Path, "is_file", fake_is_file)
+    monkeypatch.setattr(bach_tools, "run_shell", lambda cmd: seen.append(cmd) or "ok")
+    out = bach_tools.exec_tool("system_status", {}, "safe")
+    assert "CPU: ok" in out
+    assert "/usr/sbin/sysctl -n machdep.cpu.brand_string" in seen

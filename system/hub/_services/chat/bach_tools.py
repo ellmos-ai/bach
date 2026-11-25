@@ -1289,6 +1289,13 @@ def tools_for_mode(mode: str, *, bound_worker: bool = False) -> list:
                 function["parameters"]["properties"]["command"]["description"] = "Ein einzelner Prüfbefehl, zum Beispiel python -m pytest -q -- system/tests/test_datei.py."
                 function["parameters"]["properties"]["cwd"]["description"] = "Bestätigter Task-Arbeitsbaum aus start_task_worktree; erforderlich."
                 function["parameters"]["required"] = ["command", "cwd"]
+            elif function["name"] in {"list_directory", "read_file", "search_text", "write_file", "edit_file"}:
+                path_prop = function.get("parameters", {}).get("properties", {}).get("path")
+                if isinstance(path_prop, dict) and isinstance(path_prop.get("description"), str):
+                    path_prop["description"] = (
+                        f"{path_prop['description']} (relativer Pfad im gebundenen Task-Arbeitsbaum, "
+                        "z. B. '.' oder 'system/...', nicht der Live-Repo-Pfad)"
+                    )
         return bound_tools
     return tools
 
@@ -1627,7 +1634,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 try:
                     read_guard, scope = _authorize_task_reader(worker_task_binding, args.get("path") or ".")
                 except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
-                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
+                    return _tool_policy_denial(
+                        "task_read_scope_denied",
+                        "BLOCKIERT: Task-Lesebereich nicht bestätigt. Nutze relative Pfade im gebundenen Task-Arbeitsbaum (z. B. '.' oder 'system/...').",
+                    )
                 if scope.requested_is_file:
                     return _tool_policy_denial("directory_expected", "BLOCKIERT: Ein Verzeichnis ist erforderlich.")
                 children = {}
@@ -1709,7 +1719,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 try:
                     read_guard, scope = _authorize_task_reader(worker_task_binding, p)
                 except Exception:  # noqa: BLE001 - Leseberechtigung bei jeder Unsicherheit sperren.
-                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
+                    return _tool_policy_denial(
+                        "task_read_scope_denied",
+                        "BLOCKIERT: Task-Lesebereich nicht bestätigt. Nutze relative Pfade im gebundenen Task-Arbeitsbaum (z. B. '.' oder 'system/...').",
+                    )
                 if not scope.requested_is_file:
                     return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Im Task-Lesebereich muss eine freigegebene Datei angegeben werden.")
                 resolved = scope.requested
@@ -1822,7 +1835,10 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
                 try:
                     task_guard, task_scope = _authorize_task_reader(worker_task_binding, p)
                 except Exception:  # noqa: BLE001 - unklarer Task-Lesebereich bleibt gesperrt.
-                    return _tool_policy_denial("task_read_scope_denied", "BLOCKIERT: Task-Lesebereich nicht bestätigt.")
+                    return _tool_policy_denial(
+                        "task_read_scope_denied",
+                        "BLOCKIERT: Task-Lesebereich nicht bestätigt. Nutze relative Pfade im gebundenen Task-Arbeitsbaum (z. B. '.' oder 'system/...').",
+                    )
                 resolved = task_scope.requested
             else:
                 resolved = _resolve(p)
@@ -1908,11 +1924,12 @@ def exec_tool(name: str, args: Any, mode: str, bach_app=None,
             return result[:4000]
 
         if name == "system_status":
+            sysctl_bin = "/usr/sbin/sysctl" if Path("/usr/sbin/sysctl").is_file() else "sysctl"
             values = [
                 run_shell("uptime"),
                 run_shell("df -h / | tail -1"),
                 run_shell("memory_pressure | head -3"),
-                run_shell("sysctl -n machdep.cpu.brand_string"),
+                run_shell(f"{sysctl_bin} -n machdep.cpu.brand_string"),
             ]
             failure = next((value for value in values if isinstance(value, ToolErrorText)), None)
             if failure is not None:
