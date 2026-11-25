@@ -12,13 +12,22 @@ from pathlib import Path
 
 import pytest
 
-from learning_reuse_stage2 import (
-    BLIND_SCHEMA,
-    Stage2ProtocolError,
-    deterministic_schedule,
-    execute_runs,
-    prepare_runs,
-)
+try:
+    from system.tests.learning_reuse_stage2 import (
+        BLIND_SCHEMA,
+        Stage2ProtocolError,
+        deterministic_schedule,
+        execute_runs,
+        prepare_runs,
+    )
+except ImportError:
+    from learning_reuse_stage2 import (
+        BLIND_SCHEMA,
+        Stage2ProtocolError,
+        deterministic_schedule,
+        execute_runs,
+        prepare_runs,
+    )
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "learning_reuse"

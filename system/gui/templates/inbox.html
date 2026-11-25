@@ -566,14 +566,21 @@
     <script src="/static/js/api.js"></script>
     <script src="/static/js/nav.js?v=4"></script>
     <script>
-        // Private file metadata and previews require the existing device login.
+        // Private file metadata and previews use HttpOnly same-origin cookie auth.
         async function inboxFetch(url, options = {}) {
             const headers = new Headers(options.headers || {});
-            const response = await fetch(url, { ...options, headers });
-            if (response.status === 401 || response.status === 403) {
-                throw new Error('Geräteanmeldung ungültig. Bitte /token-dashboard öffnen.');
+            const response = await fetch(url, { credentials: 'same-origin', ...options, headers });
+            if (!response.ok) {
+                let detail = '';
+                try {
+                    const errData = await response.clone().json();
+                    detail = errData.detail || errData.error || errData.message || '';
+                } catch (_) {}
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error(detail || 'Geräteanmeldung erforderlich oder Sitzung abgelaufen. Bitte /token-dashboard öffnen.');
+                }
+                throw new Error(detail || ('HTTP ' + response.status));
             }
-            if (!response.ok) throw new Error('HTTP ' + response.status);
             return response;
         }
         const inboxApi = {
@@ -1039,7 +1046,8 @@
             } catch (e) {
                 console.error('Mount API Fehler:', e);
                 const tbody = document.getElementById('mounts-list-body');
-                if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--error);">API Fehler</td></tr>';
+                const errMsg = escapeHtml((e && e.message) ? e.message : 'Verbindungsfehler beim Laden der Mounts');
+                if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding: 1rem; color: var(--error);">Fehler: ${errMsg}</td></tr>`;
             }
         }
 
@@ -1063,7 +1071,7 @@
                 } else {
                     alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
                 }
-            } catch (e) { alert('API Fehler'); }
+            } catch (e) { alert('Fehler: ' + ((e && e.message) ? e.message : String(e))); }
         }
 
         async function removeMount(alias) {
@@ -1073,7 +1081,7 @@
                 const data = await res.json();
                 if (data.success) loadMounts();
                 else alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
-            } catch (e) { alert('API Fehler'); }
+            } catch (e) { alert('Fehler: ' + ((e && e.message) ? e.message : String(e))); }
         }
 
         async function restoreMounts() {
@@ -1086,7 +1094,7 @@
                 } else {
                     alert('Fehler: ' + (data.error || data.output || 'Unbekannter Fehler'));
                 }
-            } catch (e) { alert('API Fehler'); }
+            } catch (e) { alert('Fehler: ' + ((e && e.message) ? e.message : String(e))); }
         }
 
         // HELPERS
