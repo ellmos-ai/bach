@@ -2517,3 +2517,90 @@ def test_native_fallback_chain_does_not_advance_for_request_metadata(monkeypatch
             session, backend, "openrouter/free", []))
         assert result["backend_error"] == detail and selected is backend and model == "openrouter/free"
     assert calls == [(backend, "openrouter/free")]
+
+
+@pytest.mark.parametrize(
+    "runtime_rounds,session_rounds,allow_tools,expect_tools",
+    [
+        (25, 0, True, True),
+        (25, 0, False, False),
+        (0, 0, True, False),
+        (25, 10, True, True),
+    ],
+)
+def test_bound_worker_unlimited_zero_rounds_preserves_granted_tools(
+    runtime_rounds, session_rounds, allow_tools, expect_tools,
+):
+    import asyncio
+
+    from hub._services.chat.chat_runtime import ChatRuntime
+
+    class _StubBinding:
+        task_id = 4394
+        closed = False
+        _review_grant = None
+
+        def assert_active(self):
+            return None
+
+        def matches_execution_slot(self, _slot):
+            return True
+
+        def _discard_model_execution_candidate(self):
+            return None
+
+        def begin_model_execution(self, **_kwargs):
+            return None
+
+    class _ProbeBackend:
+        manages_own_tools = False
+
+        def __init__(self):
+            self.calls = []
+
+        def get_default_model(self):
+            return "inkling-2-mini:latest"
+
+        async def chat(self, messages, tools=None, think=True, model=None):
+            self.calls.append({"messages": messages, "tools": tools})
+            return {"content": "OK", "tool_calls": None}
+
+    backend = _ProbeBackend()
+    runtime = ChatRuntime(backend)
+    runtime.max_tool_rounds = runtime_rounds
+    runtime.hook_every = 999
+    session = runtime.get_session("buddha_always_on")
+    session.mode = "full"
+    session.allow_tools = allow_tools
+    session.allowed_tools = ["read_file", "task_manage"]
+    session.max_tool_rounds = session_rounds
+    session.worker_task_binding = _StubBinding()
+    session.require_task_binding = True
+
+    answer = asyncio.run(runtime.process("Prüfe Auftrag", "buddha_always_on", work_priority="background"))
+    assert answer == "OK"
+    assert len(backend.calls) == 1
+    offered = sorted(tool["function"]["name"] for tool in (backend.calls[0]["tools"] or []))
+    if expect_tools:
+        assert offered == ["read_file", "task_manage"]
+    else:
+        assert offered == []
+
+    # Verify _handoff also preserves granted tools under unlimited session.max_tool_rounds=0.
+    if expect_tools:
+        async def _run_handoff():
+            token = runtime._compute_turn_context.set(("buddha_always_on", "background"))
+            try:
+                return await runtime._handoff(
+                    [{"role": "user", "content": "Stand"}],
+                    session,
+                    backend=backend,
+                    model="inkling-2-mini:latest",
+                    tools=backend.calls[0]["tools"],
+                )
+            finally:
+                runtime._compute_turn_context.reset(token)
+
+        asyncio.run(_run_handoff())
+        handoff_offered = sorted(tool["function"]["name"] for tool in (backend.calls[-1]["tools"] or []))
+        assert handoff_offered == ["read_file", "task_manage"]

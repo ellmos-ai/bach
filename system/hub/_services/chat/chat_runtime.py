@@ -3828,7 +3828,9 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 result, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
                     session, selected_backend, selected_model,
                     msgs, tools=tools, think=session.think,
-                    _tool_rounds_enabled=max_rounds > 0,
+                    # session.max_tool_rounds == 0 means unlimited rounds ("Unbegrenzt"),
+                    # not disabled tools; only runtime.max_tool_rounds == 0 disables tools.
+                    _tool_rounds_enabled=self.max_tool_rounds > 0,
                     _completion_reserve=completion_reserve,
                 )
                 if selected_backend is not previous_backend or selected_model != previous_model:
@@ -4281,12 +4283,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
         frage = msgs + [{"role": "user", "content": HANDOFF_PROMPT}]
         selected_backend = backend or getattr(session, "backend", None) or self.backend
         selected_model = model or session.model or selected_backend.get_default_model()
-        raw_max_rounds = getattr(session, "max_tool_rounds", None)
-        max_rounds = (
-            raw_max_rounds
-            if isinstance(raw_max_rounds, int) and raw_max_rounds >= 0
-            else self.max_tool_rounds
-        )
         handoff_tools = (
             _deterministic_tools(tools)
             if tools and getattr(session, "allow_tools", True) is not False
@@ -4298,7 +4294,7 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 session, selected_backend, selected_model,
                 frage, tools=handoff_tools,
                 think=session.think if selected_model == "glm-5.3:cloud" else False,
-                **({"_tool_rounds_enabled": max_rounds > 0} if handoff_tools is not None else {}),
+                **({"_tool_rounds_enabled": self.max_tool_rounds > 0} if handoff_tools is not None else {}),
             )
             if res.get("error"):
                 raise RuntimeError(str(res["error"]))
