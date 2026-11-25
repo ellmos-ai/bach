@@ -121,9 +121,11 @@ def classify_ollama_error(payload, *, status_code=None, retry_after=None):
     text = " ".join(error.lower().split()) if isinstance(error, str) else ""
     # Ollama Cloud words it "you (...) have reached your monthly usage limit".
     monthly = status_code in (None, 429) and "monthly usage limit" in text and "reached" in text
-    tool_parse = (not monthly and status_code != 429
-                  and "xml syntax error" in text and "<function>" in text
-                  and "</parameter>" in text)
+    tool_parse = (not monthly and status_code != 429 and (
+        ("xml syntax error" in text and "<function>" in text and "</parameter>" in text)
+        or "invalid inkling2 tool call" in text
+        or "error parsing tool call" in text
+    ))
     raw = {"provider": "ollama", "kind": "tool_parse_error" if tool_parse else (
         "quota_exceeded" if monthly else (
         "rate_limited" if status_code == 429 else

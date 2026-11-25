@@ -290,6 +290,22 @@ def test_real_ollama_dispatch_reserves_before_call_and_timeout_consumes_request(
     assert path.exists()
 
 
+def test_classify_ollama_error_recognizes_inkling2_and_generic_tool_parse_errors():
+    from hub._services.llm.backend_errors import classify_ollama_error
+
+    for parser_error in (
+        'invalid Inkling2 tool call: invalid character \'"\' after object key',
+        "error parsing tool call: unexpected end of JSON input",
+    ):
+        parsed = classify_ollama_error({"error": parser_error})
+        assert parsed["kind"] == "tool_parse_error"
+        assert parsed["message"] == "Ollama konnte einen Werkzeugaufruf nicht lesen."
+        assert parser_error not in repr(parsed)
+        assert classify_ollama_error({"error": parser_error}, status_code=500)["kind"] == "tool_parse_error"
+        assert classify_ollama_error({"error": parser_error}, status_code=429)["kind"] == "rate_limited"
+        assert classify_ollama_error({"message": parser_error})["kind"] == "provider_error"
+
+
 def test_local_tool_parser_error_gets_one_new_counted_request(tmp_path, monkeypatch):
     from hub._services.llm.backend_errors import classify_ollama_error
 
