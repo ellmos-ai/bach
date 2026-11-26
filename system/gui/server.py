@@ -5109,7 +5109,18 @@ async def get_wartung_status():
 
             status["daemon"]["pending"] = len(daemon.get_pending_jobs())
 
-            status["daemon"]["running"] = Path(BACH_DIR / "data" / "daemon.pid").exists()
+        except Exception:
+
+            pass
+
+        try:
+
+            from gui.daemon_identity import observe_identity
+            from gui.daemon_service import DAEMON_PID_FILE
+
+            identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
+
+            status["daemon"]["running"] = bool(identity.get("running"))
 
         except Exception:
 
@@ -5128,29 +5139,41 @@ async def get_wartung_status():
 
 
 
-        # Backup Status
+        # Backup Status (kanonische Userdata-ZIPs & Legacy-_backups/*.db)
 
         try:
 
-            backup_dir = BACH_DIR / "_backups"
+            from hub.bach_paths import BACKUPS_DIR as CANONICAL_BACKUPS_DIR
 
-            if backup_dir.exists():
+            backup_candidates = []
+            seen_paths = set()
+            for directory, patterns in (
+                (CANONICAL_BACKUPS_DIR / "userdata", ("userdata_*.zip", "*.zip")),
+                (CANONICAL_BACKUPS_DIR, ("*.db", "*.zip")),
+                (BACH_DIR / "_backups", ("*.db", "*.zip")),
+            ):
+                if directory.exists():
+                    for pattern in patterns:
+                        for candidate in directory.glob(pattern):
+                            if candidate.is_file():
+                                resolved = str(candidate.resolve())
+                                if resolved not in seen_paths:
+                                    seen_paths.add(resolved)
+                                    backup_candidates.append(candidate)
 
-                backups = list(backup_dir.glob("*.db"))
+            status["backup"]["backup_count"] = len(backup_candidates)
 
-                status["backup"]["backup_count"] = len(backups)
+            if backup_candidates:
 
-                if backups:
+                latest = max(backup_candidates, key=lambda p: p.stat().st_mtime)
 
-                    latest = max(backups, key=lambda p: p.stat().st_mtime)
+                status["backup"]["last_backup"] = datetime.fromtimestamp(
 
-                    status["backup"]["last_backup"] = datetime.fromtimestamp(
+                    latest.stat().st_mtime
 
-                        latest.stat().st_mtime
+                ).isoformat()
 
-                    ).isoformat()
-
-        except (OSError, ValueError):
+        except (OSError, ValueError, ImportError):
 
             pass
 
