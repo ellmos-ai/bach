@@ -22,6 +22,22 @@ def test_catalog_uses_real_version_and_excludes_archive(tmp_path):
     assert len(catalog["example"]["source_version"]) == 64
 
 
+def test_catalog_excludes_synced_cache_and_sanitizes_uuid_folder_category(tmp_path):
+    root = tmp_path / "skills"
+    make_skill(root, "clean-skill")
+    synced = root / "synced" / "a1b2c3d4-1111-2222-3333-444455556666" / "bach-vanilla" / "SKILL.md"
+    synced.parent.mkdir(parents=True, exist_ok=True)
+    synced.write_text("---\nname: bach-vanilla\ndescription: Remote sync copy\n---\nBody\n", encoding="utf-8")
+    uuid_parent = root / "019e0954-7a2b-7000-8000-112233445566" / "uuid-skill" / "SKILL.md"
+    uuid_parent.parent.mkdir(parents=True, exist_ok=True)
+    uuid_parent.write_text("---\nname: UUID Hosted Skill\ndescription: Local skill\n---\nBody\n", encoding="utf-8")
+
+    catalog = source.source_catalog([root])
+    assert "bach-vanilla" not in catalog
+    assert catalog["clean-skill"]["category"] == "dev"
+    assert catalog["uuid-skill"]["category"] == "general"
+
+
 def test_locale_resolver_prefers_requested_base_then_english_without_other_locale(tmp_path):
     root = tmp_path / "skills"
     variants = {

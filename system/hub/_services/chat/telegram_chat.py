@@ -2565,9 +2565,16 @@ def _worker_backend_retry_delay(
         # Respect provider Retry-After, with bounded exponential request frequency.
         # A configured worker's stop/TTL, not three retries, ends this wait loop.
         # The #2994 cooldown helper bounds the header (a valid one reaches 68 years).
-        from hub._services.worker_rate_limit_cooldown import parse_retry_after_seconds
+        from hub._services.worker_rate_limit_cooldown import (
+            evaluate_429_cooldown,
+            parse_retry_after_seconds,
+        )
         retry_after = error.get("retry_after_seconds")
-        if retry_after is not None:
+        if error.get("status_code") == 429 or error["kind"] == "rate_limited":
+            headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
+            decision = evaluate_429_cooldown(429, headers)
+            retry_after = int(decision.cooldown_seconds) if retry_after is not None else 0
+        elif retry_after is not None:
             retry_after = int(parse_retry_after_seconds({"Retry-After": str(retry_after)})[0])
         return max(
             min(900, _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** min(retries, 4))),
@@ -2586,6 +2593,21 @@ def _worker_backend_retry_delay(
                 or model != slot.get("model")
                 or not isinstance(model, str) or model.lower().endswith(":cloud")):
             return None
+        delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
+        return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
+    if (not cloud
+            and isinstance(slot, dict)
+            and slot.get("backend") == "ollama"
+            and slot.get("type") in {"continuous", "persistent"}
+            and slot.get("max_model_requests") is None
+            and isinstance(model, str) and bool(model.strip())
+            and model == slot.get("model")
+            and not model.lower().endswith(":cloud")
+            and ((error and error.get("provider") == "ollama"
+                  and error.get("kind") == "http_error"
+                  and error.get("status_code") in {500, 502, 503, 504}
+                  and error.get("quota_exceeded") is False)
+                 or transient_failure == "httpx_connect_error")):
         delay = _WORKER_BACKEND_RETRY_BASE_SECONDS * (2 ** retries)
         return delay if waited_seconds + delay <= _WORKER_BACKEND_RETRY_BUDGET_SECONDS else None
     return None
@@ -7041,6 +7063,12 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                                           and detail.get("kind") == "connection_error")
                                                       or getattr(ans, "transient_failure", None)
                                                       == "httpx_connect_error"
+                                                      else "temporary_local_backend_error"
+                                                      if detail and detail.get("provider") == "ollama"
+                                                      and detail.get("kind") == "http_error"
+                                                      and detail.get("status_code") in {500, 502, 503, 504}
+                                                      and current_slot.get("backend") == "ollama"
+                                                      and not (isinstance(model, str) and model.lower().endswith(":cloud"))
                                                       else "temporary_no_endpoint"
                                                       if detail and detail.get("provider") == "openrouter"
                                                       and detail.get("status_code") == 404
@@ -7257,7 +7285,8 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                         and resolved.strip() != "openrouter/free"
                     ):
                         record_free_model_outcome(resolved.strip(), ok=True)
-                if control.persistent_core_intent_id is not None and backend_retries > 0:
+                had_backend_retries = backend_retries > 0
+                if control.persistent_core_intent_id is not None and had_backend_retries:
                     previous = control.persistent_core_recovery_state
                     checkpoint = control.persistent_core_checkpoint
                     if (not isinstance(previous, dict) or previous.get("phase") != "active"
@@ -7300,7 +7329,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                     control.persistent_core_recovery_state = progressed
                     backend_retries = 0
                     backend_waited_seconds = 0
-                if backend_retries:
+                if had_backend_retries:
                     backend_retries = 0
                     backend_waited_seconds = 0
                     _update_worker_slot(control, {"backend_error": None})

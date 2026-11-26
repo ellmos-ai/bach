@@ -1927,3 +1927,139 @@ def test_sdk_deactivated_unknown_is_visible_in_activity_without_release_replay(t
             control._WORKER_EXECUTIONS[ident].stop_event.set()
             thread.join(5)
         conn.close()
+
+
+@pytest.mark.parametrize("status_code, transient, worker_type, retries, waited, max_reqs, expected", [
+    (500, None, "persistent", 0, 0, None, 60),
+    (502, None, "continuous", 1, 60, None, 120),
+    (503, None, "persistent", 2, 180, None, 240),
+    (504, None, "persistent", 3, 420, None, None),
+    (500, None, "persistent", 2, 700, None, None),
+    (500, None, "once", 0, 0, None, None),
+    (500, None, "persistent", 0, 0, 10, None),
+    (400, None, "persistent", 0, 0, None, None),
+    (None, "httpx_connect_error", "persistent", 0, 0, None, 60),
+    (None, "httpx_connect_error", "persistent", 3, 420, None, None),
+])
+def test_local_ollama_transient_http_and_connect_errors_use_bounded_retry(
+        status_code, transient, worker_type, retries, waited, max_reqs, expected):
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    slot = {
+        "backend": "ollama",
+        "model": "inkling-2-mini:latest",
+        "type": worker_type,
+        "max_model_requests": max_reqs,
+    }
+    detail = None
+    if status_code is not None:
+        detail = {
+            "provider": "ollama",
+            "kind": "http_error",
+            "status_code": status_code,
+            "quota_exceeded": False,
+        }
+    assert control._worker_backend_retry_delay(
+        slot, detail, model="inkling-2-mini:latest",
+        retries=retries, waited_seconds=waited, transient_failure=transient,
+    ) == expected
+
+
+def test_local_ollama_500_oom_returns_lease_waits_and_resumes_cleanly(tmp_path, monkeypatch):
+    """Regression for buddha_always_on Metal OOM HTTP 500: return lease, wait 60s, resume & clear backend_error."""
+    import sqlite3
+    from hub._services import task_lease_client as client_module
+    from hub._services.task_lease_client import TaskLeaseClient
+    from system.tests.test_task_lease_client import _init_db
+
+    control = importlib.import_module("hub._services.chat.telegram_chat")
+    path = str(tmp_path / "slots.json")
+    slots.initialize_slots_config(path)
+    monkeypatch.setattr(slots, "DEFAULT_SLOTS_FILE", path)
+    model = "inkling-2-mini:latest"
+    ident = _add_test_worker(
+        {"name": "Local OOM resilience fixture", "type": "continuous"},
+        path,
+        monkeypatch=monkeypatch,
+        control=control,
+    )
+    slots.update_slot(ident, {
+        "backend": "ollama", "model": model, "enabled": True,
+        "mode": "safe", "pause_after": 0, "max_tool_rounds": 5,
+    }, path)
+    for registry in ("_WORKER_CONTROLS", "_WORKER_EXECUTIONS", "_ACTIVE_WORKER_THREADS"):
+        monkeypatch.setattr(control, registry, {})
+    monkeypatch.setenv("BACH_TASK_LEASE_CREATOR_WINDOW", "0")
+    monkeypatch.setattr(client_module, "get_lead_config", lambda: {"mode": "isolated"})
+    conn = sqlite3.connect(tmp_path / "tasks.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    _init_db(conn)
+    conn.execute(
+        "INSERT INTO tasks (id,title,status,priority,category,assigned_to,assigned_slot) "
+        "VALUES (42,'Local OOM resilience','pending','P1','INBOX','BACH',?)",
+        (ident,),
+    )
+    conn.commit()
+    client = TaskLeaseClient(conn=conn)
+    monkeypatch.setattr(control, "_native_task_client", lambda: client)
+    backend = OllamaBackend(default_model=model)
+    runtime = ChatRuntime(backend, session_store=_persistent_session_store(tmp_path))
+    monkeypatch.setattr(runtime, "_get_bach_context", lambda _: "")
+    monkeypatch.setattr(runtime, "_get_memory_hook_context", lambda *_a: "")
+    monkeypatch.setattr(control, "runtime", runtime)
+    monkeypatch.setattr(control, "_snapshot_chat_backend", lambda *_a, **_kw: (backend, model))
+    calls, waits = [], []
+
+    def stop_after_recovery(*_a, **_kw):
+        if len(calls) >= 2:
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            return False
+        return True
+
+    monkeypatch.setattr(control, "_wait_worker_cooldown", stop_after_recovery)
+    real_client = httpx.AsyncClient
+
+    def reply(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(500, json={"error": "mlx runner failed: kIOGPUCommandBufferCallbackErrorOutOfMemory"})
+        return httpx.Response(200, text=json.dumps({
+            "message": {"role": "assistant", "content": "Wiederaufnahme nach OOM erfolgreich"},
+            "done": True,
+        }) + "\n")
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(reply), **kw))
+
+    def wait_retry(worker, seconds, **_kw):
+        waits.append(seconds)
+        assert worker.task_binding is None and worker.lease_supervisor is None
+        assert not client.read(42).leased
+        return True
+
+    monkeypatch.setattr(control, "_wait_worker_backend_retry", wait_retry)
+    thread = None
+    try:
+        response, code = control.start_worker_execution(ident)
+        assert code == 200 and response["ok"] is True
+        execution = control._WORKER_EXECUTIONS[ident]
+        thread = execution.thread
+        thread.join(8)
+        assert not thread.is_alive()
+        assert len(calls) == 2
+        assert waits == [60]
+        current = slots.get_slot(ident, path)
+        assert current.get("backend_error") is None
+        assert execution.start_error is None
+        events = slots.get_activity_history(path=path)
+        assert any(
+            e.get("event") == "assignment_ended" and e.get("reason") == "temporary_local_backend_error"
+            for e in events
+        )
+        resolvers = conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE source = ?", (f"resolver:worker:{ident}",)
+        ).fetchone()[0]
+        assert resolvers == 0
+    finally:
+        if thread is not None and thread.is_alive():
+            control._WORKER_EXECUTIONS[ident].stop_event.set()
+            thread.join(5)
+        conn.close()
