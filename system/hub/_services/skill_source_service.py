@@ -64,7 +64,11 @@ MAX_SOURCE_BYTES = 200_000
 MAX_PROMPT_CHARS = 80_000
 DEFAULT_LOCALE = "de"
 ENGLISH_LOCALE = "en"
-SKIP_DIRS = {"_archive", "archive", "node_modules", "__pycache__", "dist", "build"}
+SKIP_DIRS = {"_archive", "archive", "node_modules", "__pycache__", "dist", "build", "synced"}
+UUID_LIKE_DIR = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:[_-].*)?$",
+    re.I,
+)
 
 
 def user_skills_root() -> Path:
@@ -176,6 +180,18 @@ def _skill_locale(meta: dict) -> tuple[str, bool]:
     return ENGLISH_LOCALE, False
 
 
+def _inferred_category(meta: dict, parent: Path, root: Path) -> str:
+    explicit = meta.get("category")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    if parent.parent == root:
+        return "general"
+    folder = parent.parent.name
+    if UUID_LIKE_DIR.fullmatch(folder):
+        return "general"
+    return folder
+
+
 def _relative_source_path(item: dict) -> str:
     try:
         return str(Path(item["path"]).relative_to(Path(item["root"])))
@@ -232,7 +248,7 @@ def source_catalog(
             item = {
                 "id": canonical_id, "canonical_skill_id": canonical_id,
                 "name": str(meta.get("name") or canonical_id),
-                "category": str(meta.get("category") or (parent.parent.name if parent.parent != root else "general")),
+                "category": _inferred_category(meta, parent, root),
                 "role": str(meta.get("description") or "")[:300],
                 "version": str(meta.get("version") or "ohne Versionsnummer"),
                 "symbol": meta.get("symbol") if isinstance(meta.get("symbol"), str) and meta["symbol"] in TICKET_SYMBOL_IDS else "",

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS devices (
 """
 
 BROWSER_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+MAX_BROWSER_SESSIONS_PER_DEVICE = 64
 
 BROWSER_SESSIONS_TABLE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS browser_sessions (
@@ -360,6 +361,28 @@ def validate_token(token: str, connection: sqlite3.Connection | None = None) -> 
             connection.close()
 
 
+def _prune_browser_sessions(connection: sqlite3.Connection, device_id: int) -> None:
+    """Delete expired browser sessions and bound active sessions per device."""
+    connection.execute(
+        "DELETE FROM browser_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
+    )
+    keep_prior = max(0, int(MAX_BROWSER_SESSIONS_PER_DEVICE) - 1)
+    connection.execute(
+        """
+        DELETE FROM browser_sessions
+        WHERE device_id = ?
+          AND session_hash NOT IN (
+              SELECT session_hash
+              FROM browser_sessions
+              WHERE device_id = ?
+              ORDER BY expires_at DESC, created_at DESC, rowid DESC
+              LIMIT ?
+          )
+        """,
+        (device_id, device_id, keep_prior),
+    )
+
+
 def create_browser_session(
     token: str, connection: sqlite3.Connection | None = None
 ) -> tuple[str, dict[str, Any]] | None:
@@ -385,9 +408,7 @@ def create_browser_session(
         ).fetchone()
         if not active:
             return None
-        connection.execute(
-            "DELETE FROM browser_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
-        )
+        _prune_browser_sessions(connection, int(device["id"]))
         connection.execute(
             "INSERT INTO browser_sessions (session_hash, device_id, expires_at) "
             "VALUES (?, ?, ?)",
@@ -494,9 +515,7 @@ def create_browser_session_for_device_id(
             "%Y-%m-%d %H:%M:%S"
         )
         session_token = secrets.token_urlsafe(32)
-        connection.execute(
-            "DELETE FROM browser_sessions WHERE expires_at <= CURRENT_TIMESTAMP"
-        )
+        _prune_browser_sessions(connection, int(device["id"]))
         connection.execute(
             "INSERT INTO browser_sessions (session_hash, device_id, expires_at) "
             "VALUES (?, ?, ?)",

@@ -68,3 +68,23 @@ def test_auto_session_endpoint_mit_gueltigem_cookie_legt_keine_neue_sitzung_an(e
     again = client.post("/api/devices/auto-session", json={"device_id": "ASUS-GEI"}, headers=hdr)
     assert again.status_code == 200 and again.json()["valid"] is True
     assert rows() == 1
+
+
+def test_pro_geraet_werden_browser_sitzungen_hart_begrenzt(monkeypatch, tmp_path):
+    import gui.device_auth as da
+
+    db = tmp_path / "cap.db"
+    conn = sqlite3.connect(str(db))
+    init_devices_db(conn)
+    monkeypatch.setattr(da, "MAX_BROWSER_SESSIONS_PER_DEVICE", 5)
+    issued = []
+    for _ in range(12):
+        res = da.create_browser_session_for_device_id("mac-studio", connection=conn)
+        assert res is not None
+        issued.append(res[0])
+    count = conn.execute("SELECT COUNT(*) FROM browser_sessions").fetchone()[0]
+    assert count == 5
+    # Die neuesten 5 Sitzungen bleiben gültig; ältere wurden bereinigt.
+    assert da.validate_token(issued[-1], connection=conn) is not None
+    assert da.validate_token(issued[0], connection=conn) is None
+    conn.close()
