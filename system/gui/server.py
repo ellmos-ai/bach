@@ -5099,8 +5099,7 @@ async def get_wartung_status():
 
         try:
 
-            from gui.daemon_identity import observe_identity
-            from gui.daemon_service import DAEMON_PID_FILE, DaemonService
+            from gui.daemon_service import DaemonService
 
             daemon = DaemonService()
 
@@ -5109,6 +5108,15 @@ async def get_wartung_status():
             status["daemon"]["jobs_count"] = len(daemon.jobs)
 
             status["daemon"]["pending"] = len(daemon.get_pending_jobs())
+
+        except Exception:
+
+            pass
+
+        try:
+
+            from gui.daemon_identity import observe_identity
+            from gui.daemon_service import DAEMON_PID_FILE
 
             identity = observe_identity(DAEMON_PID_FILE, BACH_DIR, local_service=_GUI_DAEMON)
 
