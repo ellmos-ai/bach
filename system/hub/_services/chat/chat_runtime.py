@@ -1177,6 +1177,16 @@ class ChatRuntime(_ModuleChatRuntime):
                     or profile.get("type") not in {"continuous", "persistent"}
                     or profile.get("status") != "running"):
                 return None
+            raw_expires = profile.get("expires_at")
+            if isinstance(raw_expires, str) and raw_expires.strip():
+                try:
+                    exp_dt = datetime.fromisoformat(raw_expires.strip().replace("Z", "+00:00"))
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                    if exp_dt <= datetime.now(timezone.utc):
+                        return None
+                except ValueError:
+                    return None
             # This is the pure version of this worker's own configuration,
             # including tool grants/mode/budgets. It contains no global catalog
             # version and no mutable nested references to the reader's objects.
@@ -3921,6 +3931,16 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     )
                 except Exception as e:
                     session.current_tool = ""
+                    from hub._services.llm.backend_errors import normalize_backend_error
+                    src_err = e.__cause__ if getattr(e, "backend_error", None) is None and getattr(e, "__cause__", None) is not None else e
+                    be = normalize_backend_error(getattr(src_err, "backend_error", None))
+                    rc = getattr(e, "reason_code", None) or getattr(src_err, "reason_code", None)
+                    if be is not None or isinstance(rc, str):
+                        return FailedAnswer(
+                            f"{FailedAnswer.PREFIX}{type(e).__name__}: {e}",
+                            backend_error=be,
+                            reason_code=rc if isinstance(rc, str) else None,
+                        )
                     return FailedAnswer.from_exception(e)
                 last_prompt_tokens = None
                 continue
@@ -4186,8 +4206,11 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                         _completion_reserve=True,
                     )
                     if final_res.get("error"):
+                        from hub._services.llm.backend_errors import normalize_backend_error
                         return FailedAnswer(
-                            f"{FailedAnswer.PREFIX}{final_res['error']}"
+                            f"{FailedAnswer.PREFIX}{final_res['error']}",
+                            backend_error=normalize_backend_error(final_res.get("backend_error")),
+                            reason_code=final_res.get("reason_code"),
                         )
                     content = (final_res.get("content") or "").strip()
                     if content:
@@ -4297,7 +4320,14 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                 **({"_tool_rounds_enabled": self.max_tool_rounds > 0} if handoff_tools is not None else {}),
             )
             if res.get("error"):
-                raise RuntimeError(str(res["error"]))
+                from hub._services.llm.backend_errors import normalize_backend_error
+                err = RuntimeError(str(res["error"]))
+                be = normalize_backend_error(res.get("backend_error"))
+                if be is not None:
+                    err.backend_error = be
+                if isinstance(res.get("reason_code"), str):
+                    err.reason_code = res["reason_code"]
+                raise err
             uebergabe = (res.get("content") or "").strip()
         except ModelRequestBudgetError:
             raise
