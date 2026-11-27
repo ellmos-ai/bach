@@ -1,3 +1,4 @@
+# BACH Adapter: ocean-resources (model-tuning-catalog.v1)
 # SPDX-License-Identifier: MIT
 """Unified model-specific `num_ctx` & hardware-/RAM-coupled tuning resolver for BACH.
 
