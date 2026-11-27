@@ -6026,9 +6026,12 @@ def _start_worker_execution(worker_id: str, *, custom_prompt: str | None = None,
                 elif worker_id == "buddha_always_on" and slot.get("_controller_run") is not None:
                     try:
                         _assert_worker_profile_inactive(slot)
-                    except Exception:
-                        return rejected({"error": "Vorheriger Core-Lauf nicht beendet oder leasefrei bestätigt",
-                                         "error_code": "core_previous_run_unconfirmed"}, 409)
+                    except Exception as exc:
+                        payload = {"error": "Vorheriger Core-Lauf nicht beendet oder leasefrei bestätigt",
+                                   "error_code": "core_previous_run_unconfirmed"}
+                        if str(exc) == "worker_delete_leased":
+                            payload["reason"] = "prior_lease_active"
+                        return rejected(payload, 409)
                 budget_record = None
                 if slot.get("max_model_requests") is not None:
                     from hub._services.chat.slots_config import (
@@ -10066,6 +10069,9 @@ def _resume_always_on_at_startup(stop_event):
     if status == 409:
         if response.get("error_code") == "configuration_version_conflict":
             return {"state": "configuration_changed", "retry": True}
+        if (response.get("error_code") == "core_previous_run_unconfirmed"
+                and response.get("reason") == "prior_lease_active"):
+            return {"state": "waiting_prior_lease", "retry": True}
         pending = response.get("execution", {}).get("terminal") is False
         return {"state": "existing_admission" if pending else "denied", "retry": False,
                 "execution": response.get("execution")}
