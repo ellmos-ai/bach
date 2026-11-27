@@ -4344,29 +4344,41 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
             else None
         )
         handoff_error = None
-        try:
-            res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
-                session, selected_backend, selected_model,
-                frage, tools=handoff_tools,
-                think=session.think if selected_model == "glm-5.3:cloud" else False,
-                **({"_tool_rounds_enabled": self.max_tool_rounds > 0} if handoff_tools is not None else {}),
-            )
-            if res.get("error"):
-                from hub._services.llm.backend_errors import normalize_backend_error
-                err = RuntimeError(str(res["error"]))
-                be = normalize_backend_error(res.get("backend_error"))
-                if be is not None:
-                    err.backend_error = be
-                if isinstance(res.get("reason_code"), str):
-                    err.reason_code = res["reason_code"]
-                raise err
-            uebergabe = (res.get("content") or "").strip()
-        except ModelRequestBudgetError:
-            raise
-        except Exception as e:
-            log.warning("Uebergabe fehlgeschlagen: %s", e)
-            handoff_error = e
-            uebergabe = ""
+        uebergabe = ""
+        attempts = [handoff_tools, None] if handoff_tools is not None else [None]
+        for idx, attempt_tools in enumerate(attempts):
+            try:
+                res, selected_backend, selected_model = await self._chat_with_configured_fallbacks(
+                    session, selected_backend, selected_model,
+                    frage, tools=attempt_tools,
+                    think=session.think if selected_model == "glm-5.3:cloud" else False,
+                    **({"_tool_rounds_enabled": self.max_tool_rounds > 0} if attempt_tools is not None else {}),
+                )
+                if res.get("error"):
+                    from hub._services.llm.backend_errors import normalize_backend_error
+                    err = RuntimeError(str(res["error"]))
+                    be = normalize_backend_error(res.get("backend_error"))
+                    if be is not None:
+                        err.backend_error = be
+                    if isinstance(res.get("reason_code"), str):
+                        err.reason_code = res["reason_code"]
+                    raise err
+                uebergabe = (res.get("content") or "").strip()
+                if uebergabe:
+                    handoff_error = None
+                    break
+            except ModelRequestBudgetError:
+                raise
+            except Exception as e:
+                handoff_error = e
+                uebergabe = ""
+                if idx == 0 and len(attempts) > 1:
+                    log.warning(
+                        "Uebergabe mit Tools fehlgeschlagen (%s); wiederhole einmal ohne Tool-Schema",
+                        e,
+                    )
+                    continue
+                log.warning("Uebergabe fehlgeschlagen: %s", e)
 
         if not uebergabe:
             if strict:
