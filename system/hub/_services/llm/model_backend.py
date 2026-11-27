@@ -246,6 +246,27 @@ class OllamaBackend(ModelBackend):
         """Return the same context cap that is sent to Ollama as ``num_ctx``."""
         return self.num_ctx
 
+    def resolve_model_num_ctx(
+        self,
+        model: str | None = None,
+        *,
+        slot_override: dict | None = None,
+        ollama_config_path: Path | None = None,
+        reserve_policy: dict | None = None,
+        host_ram_gib: float | None = None,
+    ) -> dict:
+        """Resolve hardware-/RAM-coupled effective `num_ctx` for a target model."""
+        from hub._services.llm.model_tuning_resolver import resolve_effective_num_ctx
+
+        target = model or self.default_model
+        return resolve_effective_num_ctx(
+            target,
+            slot_override=slot_override,
+            ollama_config_path=ollama_config_path,
+            reserve_policy=reserve_policy,
+            host_ram_gib=host_ram_gib,
+        )
+
     def unload(self, model: str | None = None, timeout: float = 5.0) -> bool:
         """Entlädt das Modell sofort (keep_alive 0); der nächste Aufruf lädt es neu."""
         import httpx
@@ -2087,10 +2108,23 @@ def create_backend(config: dict) -> ModelBackend:
                                num_ctx=config.get("num_ctx", 4096), max_new_tokens=config.get("max_new_tokens", 256),
                                timeout_seconds=config.get("timeout_seconds", 600))
     if backend_type == "ollama":
+        default_model = config.get("default_model", "qwen3.8:27b-mlx")
+        effective_num_ctx = config.get("num_ctx")
+        if effective_num_ctx is None and config.get("use_catalog_defaults"):
+            from hub._services.llm.model_tuning_resolver import resolve_effective_num_ctx
+
+            resolved = resolve_effective_num_ctx(
+                default_model,
+                slot_override=config.get("slot_override"),
+                ollama_config_path=Path(config["ollama_config_path"]) if config.get("ollama_config_path") else None,
+                reserve_policy=config.get("reserve_policy"),
+                host_ram_gib=config.get("host_ram_gib"),
+            )
+            effective_num_ctx = resolved["num_ctx"]
         return OllamaBackend(
             base_url=config.get("base_url", "http://localhost:11434"),
-            default_model=config.get("default_model", "qwen3.8:27b-mlx"),
-            num_ctx=config.get("num_ctx"),
+            default_model=default_model,
+            num_ctx=effective_num_ctx,
             request_timeout=config.get("timeout_seconds"),
         )
     elif backend_type in ("lmstudio", "lm-studio", "lm_studio"):

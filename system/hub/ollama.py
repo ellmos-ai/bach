@@ -64,7 +64,8 @@ class OllamaHandler(BaseHandler):
             "ask": "Anfrage an Ollama senden",
             "models": "Verfuegbare Modelle auflisten",
             "embed": "Embedding erstellen",
-            "set_num_ctx": "num_ctx eines Modells setzen"
+            "set_num_ctx": "num_ctx eines Modells setzen",
+            "tuning": "Hardware-/RAM-Default-Profil (num_ctx, Turns) eines Modells anzeigen",
         }
     
     def handle(self, operation: str, args: list, dry_run: bool = False) -> tuple:
@@ -78,6 +79,8 @@ class OllamaHandler(BaseHandler):
             return self._embed(args, dry_run)
         elif operation == "set_num_ctx":
             return self._set_num_ctx(args, dry_run)
+        elif operation == "tuning":
+            return self._tuning(args)
         else:
             return self._status()
     
@@ -170,19 +173,13 @@ class OllamaHandler(BaseHandler):
         results.append("")
         
         try:
-            config = self._load_num_ctx_config()
-            models_config = config.get("models")
-            if not isinstance(models_config, dict):
-                models_config = {}
-            model_entry = models_config.get(model)
-            num_ctx = model_entry.get("num_ctx") if isinstance(model_entry, dict) else None
-            if num_ctx is None:
-                env_num_ctx = os.environ.get("OLLAMA_NUM_CTX") or os.environ.get("OLLAMA_NUM_CFG")
-                if env_num_ctx:
-                    try:
-                        num_ctx = int(env_num_ctx)
-                    except (TypeError, ValueError):
-                        num_ctx = None
+            from hub._services.llm.model_tuning_resolver import resolve_effective_num_ctx
+
+            resolved = resolve_effective_num_ctx(
+                model,
+                ollama_config_path=self.target_file,
+            )
+            num_ctx = resolved["num_ctx"] if resolved["num_ctx_source"] != "safe_baseline" else None
             response = self.client.generate(prompt, model=model, num_ctx=num_ctx)
             self._telemetry_model_call(model, bool(getattr(response, "success", False)))
             if response.success:
@@ -220,25 +217,63 @@ class OllamaHandler(BaseHandler):
         return config
 
     def set_num_ctx(self, model: str, num_ctx: int = None, num_ctx_recommended: int = None) -> tuple:
-        """Setzt num_ctx / num_ctx_recommended fuer ein Modell in der Config."""
+        """Setzt num_ctx / num_ctx_recommended fuer ein Modell in der Config (inkl. Reserve-Sync)."""
         if not model:
             return False, "Fehler: Ollama set_num_ctx benoetigt ein Modell"
-        config = self._load_num_ctx_config()
-        models = config.setdefault("models", {})
-        entry = models.setdefault(model, {})
+        reserve_path = None
+        try:
+            from hub._services.chat.local_resource_reserve import policy_path
+
+            candidate = policy_path()
+            if candidate.is_file():
+                reserve_path = candidate
+        except Exception:
+            reserve_path = None
+
         if num_ctx is not None:
-            entry["num_ctx"] = num_ctx
-        if num_ctx_recommended is not None:
-            entry["num_ctx_recommended"] = num_ctx_recommended
-        self.target_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.target_file, "w", encoding="utf-8") as file:
-            json.dump(config, file, indent=2, ensure_ascii=False)
+            from hub._services.llm.model_tuning_resolver import apply_model_num_ctx_change
+
+            apply_model_num_ctx_change(
+                model,
+                num_ctx,
+                ollama_config_path=self.target_file,
+                reserve_policy_path=reserve_path,
+                num_ctx_recommended=num_ctx_recommended,
+            )
+        else:
+            config = self._load_num_ctx_config()
+            models = config.setdefault("models", {})
+            entry = models.setdefault(model, {})
+            if num_ctx_recommended is not None:
+                entry["num_ctx_recommended"] = num_ctx_recommended
+            self.target_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.target_file, "w", encoding="utf-8") as file:
+                json.dump(config, file, indent=2, ensure_ascii=False)
         details = []
         if num_ctx is not None:
             details.append(f"num_ctx={num_ctx}")
         if num_ctx_recommended is not None:
             details.append(f"num_ctx_recommended={num_ctx_recommended}")
         return True, "Ollama num_ctx fuer '{}' gespeichert: {}".format(model, ", ".join(details))
+
+    def _tuning(self, args: list) -> tuple:
+        """Zeigt das aufgeloeste Hardware-/RAM-Default-Profil fuer ein lokales Modell."""
+        from hub._services.llm.model_tuning_resolver import resolve_effective_num_ctx
+
+        model = args[0] if args else self.DEFAULT_MODEL
+        reserve_policy = None
+        try:
+            from hub._services.chat.local_resource_reserve import read_policy
+
+            reserve_policy, _ = read_policy()
+        except Exception:
+            reserve_policy = None
+        resolved = resolve_effective_num_ctx(
+            model,
+            ollama_config_path=self.target_file,
+            reserve_policy=reserve_policy,
+        )
+        return True, json.dumps(resolved, indent=2, ensure_ascii=False)
 
     def _set_num_ctx(self, args: list, dry_run: bool = False) -> tuple:
         """CLI: ollama set_num_ctx <modell> [--num-ctx N] [--num-ctx-recommended N]."""
