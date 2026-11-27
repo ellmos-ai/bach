@@ -1,0 +1,136 @@
+# Portabilitaet: UNIVERSAL
+# Zuletzt validiert: 2026-11-10 (BACH wiki-author)
+# Naechste Pruefung: 2027-11-10
+# Quellen: [https://www.json.org/json-de.html], [https://docs.python.org/3/library/json.html], [https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON], [https://de.wikipedia.org/wiki/JavaScript_Object_Notation]
+
+JSON-DATENFORMAT
+================
+Stand: 2026-11-10
+
+---
+Titel: WAS IST JSON?
+
+JSON steht fuer "JavaScript Object Notation" und ist ein textbasiertes
+Datenformat fuer den strukturierten Austausch von Daten zwischen Programmen.
+Es entstand Anfang der 2000er Jahre aus einer Spezifikation von
+Douglas Crockford auf Basis der Objektnotation von JavaScript. 2017 wurde
+es als RFC 8259 standardisiert, daneben besteht die Spezifikation ECMA-404.
+Trotz seines Ursprungs ist JSON sprachunabhaengig: fast alle gaengigen
+Programmiersprachen - darunter Python, Java, C# und JavaScript selbst -
+koennen es lesen und schreiben. JSON-Dateien sind nach Konvention
+UTF-8-kodiert.
+
+---
+Titel: WIE FUNKTIONIERT JSON?
+
+Ein JSON-Dokument baut sich aus einer kleinen, geschlossenen Menge von
+Werttypen auf:
+
+- null - leerer/fehlender Wert
+- true / false - boolesche Werte
+- Zahl - z. B. 42 oder 3.14
+- Zeichenkette - Text, immer in doppelten Anfuehrungszeichen ("wiki")
+- Array - geordnete Liste in eckigen Klammern, z. B. ["wiki", "json"]
+- Objekt - Schluessel/Wert-Paare in geschweiften Klammern:
+
+  {"agent": "wiki-author", "prioritaet": 3}
+
+Die Schluessel eines Objekts stehen ebenfalls immer in doppelten
+Anfuehrungszeichen. Kommentare sind in JSON nicht vorgesehen. Auch einen
+eigenen Datumstyp gibt es nicht; Datumsangaben folgen daher der Konvention
+einer ISO-8601-Zeichenkette in der Form "JJJJ-MM-TT", z. B. "2026-11-10".
+
+In Python uebernimmt das Standardmodul json die Umsetzung:
+json.loads() macht aus JSON-Text Python-Objekte, json.dumps() macht daraus
+wieder JSON-Text. Fuer gut lesbare Dateien sind die Parameter indent=2
+(Einrueckung) und ensure_ascii=False (echte Sonderzeichen wie ae/oe/ue
+statt \u00e4) ueblich. Im Browser stellt das JSON-Objekt gleichwertige
+Funktionen bereit: JSON.parse() und JSON.stringify().
+
+---
+Titel: WOZU DIENSTET JSON?
+
+- Datenaustausch ueber Schnittstellen (APIs): Anfragen und Antworten
+  transportieren strukturierte Daten als JSON.
+- Konfigurationsdateien: viele Werkzeuge lesen ihre Einstellungen als JSON.
+- Metadaten: strukturierte Schluessel/Wert-Felder beschreiben Dokumente,
+  Tasks oder Datensaetze.
+- BACH-Kontext: maschinenlesbare Feldlisten wie das Frontmatter der
+  SKILL.md-Dateien folgen derselben Schluessel/Wert-Logik.
+
+---
+Titel: WARUM IST JSON WICHTIG?
+
+- Maschinenlesbar und eindeutig: die Syntax ist klein und praezise
+  (RFC 8259 / ECMA-404), sodass jedes System sie gleich interpretiert.
+- Sprachuebergreifend: dieselbe Datei kann von Python, JavaScript und
+  anderen Oekosystemen verarbeitet werden.
+- Fehlerleicht verifizierbar: Formatverletzungen erkennen Parser und
+  Validierer sofort, statt spater still zu Missinterpretationen zu fuehren.
+- Etabliert und langlebig: breite Unterstuetzung, stabiler Standard.
+
+---
+Titel: DETAILLE
+
+Beispiel fuer ein verschachteltes Objekt:
+
+{
+  "task": {
+    "id": 2110,
+    "titel": "Wiki-Artikel JSON-Datenformat",
+    "fertig": false
+  },
+  "tags": ["wiki", "datenformate"],
+  "gueltig_bis": "2027-11-10"
+}
+
+Python-Beispiel (Schreiben und Lesen):
+
+    import json
+
+    daten = {"agent": "persoenlicher-assistent", "seit": "2026-01-23"}
+    text = json.dumps(daten, indent=2, ensure_ascii=False)  # Python -> JSON
+    gleiches = json.loads(text)                             # JSON -> Python
+
+Browser-Beispiel (JSON-Objekt, siehe MDN):
+
+    const objekt = JSON.parse('{"agent":"persoenlicher-assistent"}');
+    const text   = JSON.stringify(objekt, null, 2);
+
+Datum-Konvention-Beispiel: statt eines eigenen Datumstyps wird eine
+ISO-8601-Zeichenkette verwendet - {"naechste_pruefung": "2027-11-10"}.
+
+---
+Titel: BACH-INTEGRATION
+
+- Das YAML-Frontmatter in den SKILL.md-Dateien der BACH-Agenten - Felder
+  wie "created:" und "updated:" - ist kein JSON, folgt aber derselben
+  Schluessel/Wert-Logik fuer maschinenlesbare Metadaten.
+- Agenten wie queue-maintainer (Task-Warteschlange) oder
+  gesundheitsassistent (Gesundheitspflege) verarbeiten strukturierte
+  Daten; JSON-Grundwissen hilft beim korrekten Lesen und Pflegen
+  solcher Strukturen.
+- Dieser Artikel ist bewusst als wiederverwendbares Grundlagenwissen
+  gehalten und gilt ueber konkrete BACH-Ablaeufe hinaus
+  (Portabilitaet UNIVERSAL).
+
+---
+Titel: QUELLEN
+
+[1] json.org (deutsche Seite): offizielle JSON-Homepage, Beschreibung
+    der Syntax. https://www.json.org/json-de.html
+[2] Python-Dokumentation, Standardmodul json: Referenz zu
+    json.loads/json.dumps sowie indent und ensure_ascii=False.
+    https://docs.python.org/3/library/json.html
+[3] MDN Web Docs, JSON-Objekt: Browser-Funktionen JSON.parse und
+    JSON.stringify.
+    https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON
+[4] Wikipedia, Artikel "JavaScript Object Notation": Geschichte
+    (Crockford, Anfang der 2000er), Standardisierung (RFC 8259,
+    ECMA-404), Einsatzbereiche.
+    https://de.wikipedia.org/wiki/JavaScript_Object_Notation
+
+---
+Titel: SIEHE AUCH
+
+- wiki/wiki_konventionen.txt - Format- und Indexregeln des BACH-Wiki.

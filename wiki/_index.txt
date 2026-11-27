@@ -1,0 +1,20 @@
+# Wiki-Index
+
+* json-grundlagen.txt
+* wiki_konventionen.txt
+
+## Fachindex
+
+### datenformate
+* json-grundlagen.txt
+
+### meta-regeln
+* wiki_konventionen.txt
+
+## Neuste Artikel (sortiert absteigend)
+
+* json-grundlagen.txt (2026-11-10)
+* wiki_konventionen.txt (2026-10-30)
+
+# Bereinigung 2026-11-10: 15 Phantom-Eintraege entfernt (python-agent, cloud-integration, health-assistant, bio-harmonisierung, europe-tourism, api-gateway, knowledge-graph, agentenreflexion, fachwissen-agent, aws-architektur, azure-vm, gcp-network, icf, labwerte, medikamentendosierung), werden nach Wiederanlegen wieder aufgenommen.
+# Stand: 2026-11-10

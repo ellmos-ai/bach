@@ -1,0 +1,35 @@
+# Wiki-Konventionen
+
+## Portabilität
+- Alle Artikel beginnen mit `# Portabilitaet: UNIVERSAL`
+- Fügen Sie `# Zuletzt validiert:` und `# Naechste Pruefung:` hinzu
+- Quellenliste: `# Quellen: [URL1], [URL2]`
+
+## Struktur
+- Titel in GROSSBUCHSTABEN, gefolgt von Unterstreichung
+- Abschnittsüberschriften: `---` gefolgt von `Titel: XXX`
+- Abschnitte: `WAS IST X?`, `WER IST X?`, `WOZU DIENSTET X?`, `WANN IST X relevant?`, `WARUM IST X WICHTIG?`, `WIE FUNKTIONIERT X?`, `DETAILLE`, `BACH-INTEGRATION`, `QUELLEN`, `SIEHE AUCH`
+
+## Metadaten-Header
+```
+# Portabilitaet: UNIVERSAL
+# Zuletzt validiert: YYYY-MM-DD (Autor/BACH wiki-author)
+# Naechste Pruefung: YYYY-MM-DD
+# Quellen: [URL1], [URL2]
+```
+
+## Besonderheiten
+- Verwenden Sie direkt nach dem Titel `Stand:` mit Datum.
+- Fügen Sie bei Bedarf `BESCHLEUNIGUNG` oder `REVISION` hinzu.
+- Alle relativen Links relativ zum Wiki-Root (`wiki/_index.txt` oder Unterordner).
+- Benennen Sie Dateien mit Kleinbuchsten und `-` für Trennzeichen (z.B. `python-agent.txt`).
+- Nutzen Sie Unterordner (`wiki/[domain]/`) für agentenspezifische Inhalte.
+- Dokumentieren Sie alle Aktionen im `logs/wiki_author/`-Verzeichnis.
+
+## Index-Regeln
+- `_index.txt` wird automatisch aus `.txt`-Dateien unterhaltsam generiert; halten Sie es aktuell.
+- Jeder Domain-Unterordner (`wiki/[domain]/`) enthält `_index.txt` für Fachwissen.
+
+## QA
+- Führen Sie `wiki-author validate` durch, um Validierungsschritte zu starten.
+- Verwenden Sie `bach help wiki` für Hilfe zu Wiki-bezogenen Handlern.
