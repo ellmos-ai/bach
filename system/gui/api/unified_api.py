@@ -3952,6 +3952,214 @@ async def set_fackel_priority(request: Request, payload: Dict[str, Any] = Body(d
         raise HTTPException(status_code=503, detail="Vorrang konnte nicht bestätigt werden")
 
 
+_LOCAL_TUNING_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./:-]{0,191}$")
+
+
+def _ollama_config_path() -> Path:
+    return _SYSTEM_ROOT / "data" / "ollama_config.json"
+
+
+def _installed_local_ollama_models(timeout: float = 1.5) -> set[str]:
+    """Best-effort loopback probe of locally installed Ollama model names."""
+    import urllib.request
+
+    try:
+        req = urllib.request.Request("http://127.0.0.1:11434/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if getattr(resp, "status", 200) != 200:
+                return set()
+            payload = json.loads(resp.read(262_144).decode("utf-8", errors="replace"))
+    except Exception:
+        return set()
+    items = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return set()
+    names: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw = str(item.get("name") or item.get("model") or "").strip()
+        if raw and not raw.lower().endswith(":cloud") and _LOCAL_TUNING_MODEL_RE.fullmatch(raw):
+            names.add(raw)
+    return names
+
+
+def _build_local_model_tuning_overview() -> Dict[str, Any]:
+    from hub._services.llm.model_tuning_resolver import (
+        _load_catalog,
+        detect_host_ram_gib,
+        resolve_effective_num_ctx,
+    )
+
+    cfg_path = _ollama_config_path()
+    reserve_policy = None
+    try:
+        from hub._services.chat.local_resource_reserve import read_policy
+
+        reserve_policy, _ = read_policy()
+    except Exception:
+        reserve_policy = None
+
+    host_ram = detect_host_ram_gib()
+    catalog, catalog_origin = _load_catalog()
+    installed = _installed_local_ollama_models()
+
+    manual_models: set[str] = set()
+    if cfg_path.is_file():
+        try:
+            raw_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(raw_cfg, dict) and isinstance(raw_cfg.get("models"), dict):
+                manual_models = {
+                    str(k) for k, v in raw_cfg["models"].items()
+                    if isinstance(v, dict) and v.get("num_ctx") is not None
+                }
+        except (OSError, ValueError):
+            manual_models = set()
+
+    model_ids: list[str] = []
+    seen: set[str] = set()
+    notes_by_model: dict[str, str] = {}
+    for entry in catalog.get("models") or []:
+        mid = str(entry.get("model_id") or "").strip()
+        if mid and mid not in seen:
+            seen.add(mid)
+            model_ids.append(mid)
+            tiers = sorted(entry.get("ram_tiers") or [], key=lambda t: float(t.get("min_ram_gib", 0)))
+            chosen = tiers[0] if tiers else {}
+            for t in tiers:
+                if host_ram + 0.5 >= float(t.get("min_ram_gib", 0)):
+                    chosen = t
+            if chosen.get("notes"):
+                notes_by_model[mid] = str(chosen["notes"])
+    for mid in sorted(installed | manual_models):
+        if mid not in seen:
+            seen.add(mid)
+            model_ids.append(mid)
+
+    models_out: list[dict[str, Any]] = []
+    for mid in model_ids:
+        resolved = resolve_effective_num_ctx(
+            mid,
+            ollama_config_path=cfg_path,
+            reserve_policy=reserve_policy,
+            host_ram_gib=host_ram,
+        )
+        alt = mid if ":" in mid else f"{mid}:latest"
+        models_out.append(
+            {
+                **resolved,
+                "installed": mid in installed or alt in installed,
+                "has_manual_override": mid in manual_models or alt in manual_models,
+                "notes": notes_by_model.get(mid, ""),
+            }
+        )
+
+    return {
+        "schema": "bach.model-tuning-overview.v1",
+        "ok": True,
+        "host_ram_gib": round(host_ram, 2),
+        "catalog_origin": catalog_origin,
+        "models": models_out,
+    }
+
+
+@router.get("/system/models/tuning")
+async def get_local_model_tuning(request: Request):
+    """Return hardware-/RAM-coupled default profiles & active num_ctx settings (#2972 / #4445)."""
+    _require_memory_device(request)
+    return await asyncio.to_thread(_build_local_model_tuning_overview)
+
+
+@router.put("/system/models/tuning")
+async def update_local_model_tuning(request: Request, payload: Dict[str, Any] = Body(default={})):
+    """Save or reset a local model's `num_ctx` across config and reserve budget (#2972 / #4445)."""
+    _require_memory_device(request)
+    model = str(payload.get("model") or "").strip()
+    if not model or not _LOCAL_TUNING_MODEL_RE.fullmatch(model) or model.lower().endswith(":cloud"):
+        raise HTTPException(status_code=400, detail="Ungültiger lokaler Modellname")
+
+    from hub._services.llm.model_tuning_resolver import (
+        apply_model_num_ctx_change,
+        resolve_effective_num_ctx,
+        validate_num_ctx,
+    )
+
+    cfg_path = _ollama_config_path()
+    reserve_path = None
+    try:
+        from hub._services.chat.local_resource_reserve import policy_path
+
+        cand = policy_path()
+        if cand.is_file():
+            reserve_path = cand
+    except Exception:
+        reserve_path = None
+
+    reset_to_default = bool(payload.get("reset_to_default", False))
+    reserve_synced = False
+
+    if reset_to_default:
+        if cfg_path.is_file():
+            try:
+                raw_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raw_cfg = {}
+            if isinstance(raw_cfg, dict) and isinstance(raw_cfg.get("models"), dict):
+                raw_cfg["models"].pop(model, None)
+                cfg_path.write_text(
+                    json.dumps(raw_cfg, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+        default_profile = resolve_effective_num_ctx(model)
+        if reserve_path is not None and reserve_path.is_file():
+            try:
+                raw_reserve = json.loads(reserve_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raw_reserve = None
+            if isinstance(raw_reserve, dict) and isinstance(raw_reserve.get("models"), dict):
+                r_entry = raw_reserve["models"].get(model)
+                if isinstance(r_entry, dict) and r_entry.get("num_ctx") != default_profile["num_ctx_safe"]:
+                    r_entry["num_ctx"] = default_profile["num_ctx_safe"]
+                    reserve_path.write_text(
+                        json.dumps(raw_reserve, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8",
+                    )
+                    reserve_synced = True
+    else:
+        raw_ctx = payload.get("num_ctx")
+        try:
+            validated_ctx = validate_num_ctx(raw_ctx)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        receipt = apply_model_num_ctx_change(
+            model,
+            validated_ctx,
+            ollama_config_path=cfg_path,
+            reserve_policy_path=reserve_path,
+        )
+        reserve_synced = bool(receipt.get("reserve_policy_synced"))
+
+    reserve_policy = None
+    try:
+        from hub._services.chat.local_resource_reserve import read_policy
+
+        reserve_policy, _ = read_policy()
+    except Exception:
+        reserve_policy = None
+    resolved = resolve_effective_num_ctx(
+        model,
+        ollama_config_path=cfg_path,
+        reserve_policy=reserve_policy,
+    )
+    return {
+        "ok": True,
+        "model": model,
+        "reset_to_default": reset_to_default,
+        "reserve_policy_synced": reserve_synced,
+        "resolved": resolved,
+    }
+
+
 @router.post("/agenten/teams/{team_id}/beseelen")
 async def beseelen_team(team_id: int, payload: Dict[str, Any] = Body(...)):
     """Compatibility model editor, using the same revision check as teams."""
