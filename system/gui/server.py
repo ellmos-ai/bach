@@ -1906,7 +1906,7 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
                 or path == "/api/mounts" or path.startswith("/api/mounts/")
                 or path == "/api/artifacts" or path.startswith("/api/artifacts/")
                 or path == "/api/artefakte"
-                or path in {"/api/system/cluster-cockpit", "/api/system/fackel"}
+                or path in {"/api/system/cluster-cockpit", "/api/system/fackel", "/api/system/models/tuning"}
                 or path == "/api/agent-triggers" or path.startswith("/api/agent-triggers/")
                 or path == "/api/system/core-agents" or path.startswith("/api/system/core-agents/")
                 or path == "/api/system/core-prompts" or path.startswith("/api/system/core-prompts/")
