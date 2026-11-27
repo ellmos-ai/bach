@@ -959,6 +959,15 @@
                 </div>
 
                 <div class="voice-interim" id="voice-interim"></div>
+                <div class="chat-board-runner" id="chat-board-runner" style="display:none; padding: 8px 16px; background: var(--bg-card); border-top: 1px solid var(--border); align-items: center; gap: 10px; font-size: 0.82rem; flex-shrink: 0;">
+                    <span style="font-weight: 600;">📋 Board-Runner:</span>
+                    <span id="board-runner-title" style="color: var(--accent);">–</span>
+                    <span id="board-runner-progress" style="padding: 2px 8px; border-radius: 999px; background: rgba(122,162,247,0.18); font-variant-numeric: tabular-nums;">0 / 0</span>
+                    <span id="board-runner-step-name" style="color: var(--text-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                    <button type="button" class="quick-prompt-btn" id="board-runner-toggle" onclick="toggleBoardRunnerPause()">⏸ Pause</button>
+                    <button type="button" class="quick-prompt-btn" id="board-runner-next" onclick="stepBoardRunnerNext()">⏭ Nächster</button>
+                    <button type="button" class="quick-prompt-btn" id="board-runner-cancel" onclick="cancelBoardRunner()">✕ Abbrechen</button>
+                </div>
                 <div class="chat-quick-prompt-bar" id="chat-quick-prompt-bar">
                     <span class="quick-prompt-icon" title="Schnellauswahl Prompt-Bibliothek">⚡</span>
                     <select id="chat-quick-prompt-select" class="quick-prompt-select" title="Prompt aus Bibliothek oder Favoriten laden">
@@ -1834,17 +1843,38 @@
         let draftAgentId = null;
         function loadLibraryDraft() {
             const draft = BachChatDraft.consume();
-            if (draft === null) return;
+            if (draft !== null) {
+                inputEl.value = draft;
+                if (draft && draft.autorun) {
+                    pendingPromptAutorun = true;
+                }
+                if (draft && draft.agent_id && !profileAgentId) {
+                    draftAgentId = draft.agent_id;
+                }
+                autoResize();
+                inputEl.focus();
+                return;
+            }
 
-            inputEl.value = draft;
-            if (draft && draft.autorun) {
-                pendingPromptAutorun = true;
-            }
-            if (draft && draft.agent_id && !profileAgentId) {
-                draftAgentId = draft.agent_id;
-            }
-            autoResize();
-            inputEl.focus();
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const queryPrompt = params.get('prompt');
+                if (queryPrompt && queryPrompt.trim()) {
+                    inputEl.value = queryPrompt;
+                    if (params.get('autorun') === '1' || params.get('autorun') === 'true') {
+                        pendingPromptAutorun = true;
+                    }
+                    params.delete('prompt');
+                    params.delete('autorun');
+                    const qs = params.toString();
+                    const cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, '', cleanUrl);
+                    }
+                    autoResize();
+                    inputEl.focus();
+                }
+            } catch (_) {}
         }
 
         async function send() {
@@ -1878,7 +1908,7 @@
                             : (readiness.status || readiness.error || 'Backend nicht verfügbar'),
                         'error'
                     );
-                    return;
+                    return false;
                 }
 
                 inputEl.value = '';
@@ -1901,6 +1931,7 @@
                     inputEl.value = text;
                     autoResize();
                     updateComposerAvailability();
+                    return false;
                 }
 
                 if (data.ok && data.answer && profileConfirmed(data)) {
@@ -1910,6 +1941,7 @@
                     if (!queueManager.paused && queueManager.items.length > 0) {
                         setTimeout(processNextQueuedMessage, 600);
                     }
+                    return true;
                 } else {
                     if (queueManager.items.length > 0 && !queueManager.paused) {
                         queueManager.paused = true;
@@ -1918,6 +1950,7 @@
                     }
                     addMessage(data.ok && profileAgentId ? 'Profilbindung in Antwort nicht bestätigt' :
                         (data.error || data.detail || 'Unbekannter Fehler'), 'error');
+                    return false;
                 }
             } catch (e) {
                 setTyping(false);
@@ -1931,6 +1964,7 @@
                     showToast('Warteschlange wegen Fehler pausiert');
                 }
                 addMessage('Verbindungsfehler: ' + e.message, 'error');
+                return false;
             } finally {
                 sending = false;
                 updateComposerAvailability();
@@ -2486,6 +2520,173 @@
             btnLib.addEventListener('click', () => window.location.assign('/prompt-library'));
         }
 
+        // ── Board-Runner (Sequenz-/Batch-Ausführung) ──
+        let boardRunnerState = null;
+
+        function renderBoardRunnerBanner() {
+            const banner = document.getElementById('chat-board-runner');
+            if (!banner) return;
+            if (!boardRunnerState || boardRunnerState.cancelled || !boardRunnerState.queue.length) {
+                banner.style.display = 'none';
+                return;
+            }
+            banner.style.display = 'flex';
+            const total = boardRunnerState.queue.length;
+            const idx = Math.min(boardRunnerState.index, total - 1);
+            const cur = boardRunnerState.queue[idx] || {};
+            document.getElementById('board-runner-title').textContent = boardRunnerState.title || 'Board';
+            document.getElementById('board-runner-progress').textContent = (idx + 1) + ' / ' + total;
+            const statusText = boardRunnerState.completed
+                ? 'Abgeschlossen'
+                : ((cur.name || 'Prompt #' + (idx + 1)) + (boardRunnerState.paused ? ' (pausiert)' : ''));
+            document.getElementById('board-runner-step-name').textContent = statusText;
+            const toggleBtn = document.getElementById('board-runner-toggle');
+            if (toggleBtn) {
+                toggleBtn.textContent = boardRunnerState.paused ? '▶ Weiter' : '⏸ Pause';
+            }
+        }
+
+        async function runBoardRunnerLoop() {
+            if (!boardRunnerState || boardRunnerState.loopActive) return;
+            boardRunnerState.loopActive = true;
+            try {
+                while (boardRunnerState && !boardRunnerState.cancelled && !boardRunnerState.paused
+                       && boardRunnerState.index < boardRunnerState.queue.length) {
+                    const item = boardRunnerState.queue[boardRunnerState.index];
+                    renderBoardRunnerBanner();
+                    if (!backendAvailable || profileSelectionError) {
+                        boardRunnerState.paused = true;
+                        renderBoardRunnerBanner();
+                        break;
+                    }
+                    inputEl.value = item.text || '';
+                    autoResize();
+                    const ok = await send();
+                    if (!boardRunnerState || boardRunnerState.cancelled) break;
+                    if (!ok) {
+                        boardRunnerState.paused = true;
+                        renderBoardRunnerBanner();
+                        break;
+                    }
+                    boardRunnerState.index += 1;
+                    if (boardRunnerState.index >= boardRunnerState.queue.length) {
+                        boardRunnerState.completed = true;
+                        renderBoardRunnerBanner();
+                        break;
+                    }
+                    inputEl.value = boardRunnerState.queue[boardRunnerState.index].text || '';
+                    autoResize();
+                    renderBoardRunnerBanner();
+                    await new Promise(r => setTimeout(r, 300));
+                }
+            } finally {
+                if (boardRunnerState) boardRunnerState.loopActive = false;
+            }
+        }
+
+        function toggleBoardRunnerPause() {
+            if (!boardRunnerState) return;
+            boardRunnerState.paused = !boardRunnerState.paused;
+            renderBoardRunnerBanner();
+            if (!boardRunnerState.paused && !boardRunnerState.completed) {
+                runBoardRunnerLoop();
+            }
+        }
+        window.toggleBoardRunnerPause = toggleBoardRunnerPause;
+
+        async function stepBoardRunnerNext() {
+            if (!boardRunnerState || boardRunnerState.cancelled || boardRunnerState.loopActive) return;
+            if (boardRunnerState.index >= boardRunnerState.queue.length) return;
+            const item = boardRunnerState.queue[boardRunnerState.index];
+            inputEl.value = item.text || '';
+            autoResize();
+            renderBoardRunnerBanner();
+            const ok = await send();
+            if (ok && boardRunnerState && !boardRunnerState.cancelled) {
+                boardRunnerState.index += 1;
+                if (boardRunnerState.index >= boardRunnerState.queue.length) {
+                    boardRunnerState.completed = true;
+                } else {
+                    inputEl.value = boardRunnerState.queue[boardRunnerState.index].text || '';
+                    autoResize();
+                }
+                renderBoardRunnerBanner();
+            }
+        }
+        window.stepBoardRunnerNext = stepBoardRunnerNext;
+
+        function cancelBoardRunner() {
+            if (boardRunnerState) {
+                boardRunnerState.cancelled = true;
+                boardRunnerState.paused = true;
+            }
+            renderBoardRunnerBanner();
+        }
+        window.cancelBoardRunner = cancelBoardRunner;
+
+        async function initBoardRunner() {
+            let boardRef = null;
+            let autorun = false;
+            try {
+                const pendingRaw = sessionStorage.getItem('bach.pendingBoardRunner');
+                if (pendingRaw) {
+                    sessionStorage.removeItem('bach.pendingBoardRunner');
+                    const parsed = JSON.parse(pendingRaw);
+                    if (parsed && parsed.board) {
+                        boardRef = String(parsed.board);
+                        autorun = Boolean(parsed.autorun);
+                    }
+                }
+            } catch (_) {}
+            if (!boardRef) {
+                try {
+                    const params = new URLSearchParams(window.location.search);
+                    boardRef = params.get('board_id') || params.get('board');
+                    autorun = params.get('board_autorun') === '1' || params.get('board_autorun') === 'true';
+                    if (!boardRef) return;
+                    params.delete('board_id');
+                    params.delete('board');
+                    params.delete('board_autorun');
+                    const qs = params.toString();
+                    const cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + (window.location.hash || '');
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, '', cleanUrl);
+                    }
+                } catch (_) {
+                    return;
+                }
+            }
+            try {
+                const resp = await fetch('/api/prompt-library/boards/' + encodeURIComponent(boardRef), {
+                    headers: controlHeaders('GET')
+                });
+                const data = await resp.json();
+                const board = data && data.board ? data.board : null;
+                if (!resp.ok || !board || !Array.isArray(board.prompts) || !board.prompts.length) {
+                    addMessage('Prompt-Board "' + boardRef + '" ist leer oder nicht gefunden.', 'error');
+                    return;
+                }
+                boardRunnerState = {
+                    boardId: board.id,
+                    title: board.title || boardRef,
+                    queue: board.prompts,
+                    index: 0,
+                    paused: !autorun,
+                    cancelled: false,
+                    completed: false,
+                    loopActive: false,
+                };
+                inputEl.value = boardRunnerState.queue[0].text || '';
+                autoResize();
+                renderBoardRunnerBanner();
+                if (autorun) {
+                    setTimeout(() => runBoardRunnerLoop(), 350);
+                }
+            } catch (e) {
+                addMessage('Board-Runner Fehler: ' + e.message, 'error');
+            }
+        }
+
         // ── Init ──
         function loadHistory() {
             return loadActiveChat();
@@ -2493,7 +2694,9 @@
         window.loadHistory = loadHistory;
         loadChatQuickPrompts();
         loadWebSessions().then(() => {
-            loadHistory().then(loadLibraryDraft).then(() => {
+            loadHistory().then(() => {
+                loadLibraryDraft();
+                initBoardRunner();
                 if (pendingPromptAutorun) {
                     setTimeout(() => {
                         if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
@@ -2503,14 +2706,6 @@
                 }
             });
         });
-        loadLibraryDraft();
-        if (pendingPromptAutorun) {
-            setTimeout(() => {
-                if (inputEl.value.trim() && !sending && backendAvailable && !profileSelectionError) {
-                    send();
-                }
-            }, 450);
-        }
         refreshStatus();
         setInterval(refreshStatus, 30000);
     })();

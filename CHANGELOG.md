@@ -45,6 +45,21 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 
 ## [Unreleased]
 
+- **Board-Runner, `bach update stack` & Legacy-Standalone-Module (Tasks #-61, #-62, #-63, 2026-11-14):**
+  - **Board-Runner Sequenz-Ausführung & Live-Tray-Refresh (Task #-61):** `GET /api/prompt-library/boards/{board_ref}` (`system/gui/server.py`), `▶ Board starten` in `prompt-library.html`, Sequenz-Steuerung `#chat-board-runner` (`initBoardRunner`, Pause/Weiter/Nächster/Abbrechen) in `chat.html` sowie Tray-Aktion `▶💬 Gesamtes Board im Web-Chat starten` und Live-DB-Signatur-Refresh (`_prompt_db_signature()`, `_check_prompt_boards_refresh()`) in `chat_tray.py`.
+  - **Einheitliche Self-Update-Orchestrierung (Task #-62):** `ModulesHandler.run_stack_update()`, CLI `bach update stack` / `bach modules stack-update` sowie `POST /api/modules/stack-update` orchestrieren Feed-Sync, Auto-Update, Hot-Wiring und Drift-Gate.
+  - **Legacy-Kandidaten-Audit & 4 neue Standalone-Module (Task #-63):** `bach modules audit-legacy` (`audit_legacy_candidates()`) sowie Extraktion, Tests, Hot-Wiring (`ocean_stack_bridge.py`) und Lockfile-Registrierung der 4 self-contained Module `permissions`, `config`, `backup` und `connector` unter `.MODULES/` (34/34 gebunden, 0 Drift).
+
+- **Modularer Core Lockfile-Audit, Feed-Roundtrip & Tray Prompt-Boards (Tasks #-58, #-59, #-60, 2026-11-14):**
+  - **Lockfile Auto-Refresh & Checksum-Audit (Task #-58):** `ModulesHandler.refresh_lockfile()` (fail-closed Manifest-/Syntax-/Test-Audit vor Lockfile-Update), CLI `bach modules bootstrap --refresh-lockfile` sowie strikter CI-Gate `bach modules drift --strict`; `.MODULES/modules.lock.json` für `.MODULES/prompt` auf 0 Drift aktualisiert (30/30 intakt).
+  - **Tray & PromptBoard Gespeicherte Boards (Task #-59):** `BACHTray._load_db_prompt_boards()` + `📋 Gespeicherte Boards`-Submenu unter `PromptBoard` in `system/hub/_services/chat/chat_tray.py`, Direkt-Run-Aktion `▶💬 Im Web-Chat ausführen` (`?prompt=...&autorun=1`) inkl. Query-Draft-Auswertung in `system/gui/templates/chat.html` (`loadLibraryDraft()`).
+  - **Feed-Roundtrip & Kontrollierter Pull-Sync (Task #-60):** `file://`-URI-Auflösung in `sync_feeds()`/`_install_module()`, Lockfile-Auto-Refresh nach unpinnierten Upgrades in `_update_modules()`/`_auto_update_cycle()` (Pins/Quarantäne bleiben strikt aktiv) und `sync_repos(..., pull_newer=True)` (`--pull-newer`) für `import_newer_from_repo`.
+
+- **Modularer Core Telemetrie/Drift, Auto-Export Pipeline & GUI PromptBoard Board/Tag-Matrix (Tasks #-57, #-56, #-55, 2026-11-14):**
+  - **Telemetrie- & Dependency-Drift-Dashboard (Task #-57):** `ModulesHandler.get_telemetry_and_drift_report()` inkl. geteiltem Deterministik-Hasher `_compute_module_sha256()`, CLI `bach modules telemetry|drift`, API `GET /api/modules/telemetry` und Live-Telemetrie-Leiste in `index.html`. Fixt zudem den Quick-Prompt-API-Contract (`data.prompts || data.items`) auf dem Dashboard.
+  - **Live Tag-Filter-Matrix & Multi-Category Board (Task #-56):** `GET /api/prompt-library` um Multi-Tag-Filter (`tags`), Board-Filter (`board`), `tag_counts` und `boards` erweitert; neue Board-Endpunkte `GET /api/prompt-library/boards` & `POST /api/prompt-library/boards/assign` sowie klickbare Tag-Matrix und Kategorie-Board-Ansicht mit Direkt-Ausführung in `prompt-library.html`.
+  - **Auto-Export & Multi-Repo Sync Pipeline (Task #-55):** `ModulesHandler.sync_repos()` inkl. Sibling-Repo-Drifterkennung, Bundle-/SHA-256-Export nach `exports/modules/manifest_feed.json`, CLI `bach modules auto-export|sync-repos` und API `POST /api/modules/auto-export`.
+
 - **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
   - **Modularer Core Standalone-Export (Task #-36):**
     - 3 autarke Standalone-Module in `.MODULES/` erstellt und validiert:
@@ -1199,6 +1214,16 @@ Copyright (c) 2026 BACH Contributors. Alle Rechte vorbehalten.
 ---
 
 ## [Unreleased]
+
+- **Modularer Core Lockfile-Audit, Feed-Roundtrip & Tray Prompt-Boards (Tasks #-58, #-59, #-60, 2026-11-14):**
+  - **Lockfile Auto-Refresh & Checksum-Audit (Task #-58):** `ModulesHandler.refresh_lockfile()` (fail-closed Manifest-/Syntax-/Test-Audit vor Lockfile-Update), CLI `bach modules bootstrap --refresh-lockfile` sowie strikter CI-Gate `bach modules drift --strict`; `.MODULES/modules.lock.json` für `.MODULES/prompt` auf 0 Drift aktualisiert (30/30 intakt).
+  - **Tray & PromptBoard Gespeicherte Boards (Task #-59):** `BACHTray._load_db_prompt_boards()` + `📋 Gespeicherte Boards`-Submenu unter `PromptBoard` in `system/hub/_services/chat/chat_tray.py`, Direkt-Run-Aktion `▶💬 Im Web-Chat ausführen` (`?prompt=...&autorun=1`) inkl. Query-Draft-Auswertung in `system/gui/templates/chat.html` (`loadLibraryDraft()`).
+  - **Feed-Roundtrip & Kontrollierter Pull-Sync (Task #-60):** `file://`-URI-Auflösung in `sync_feeds()`/`_install_module()`, Lockfile-Auto-Refresh nach unpinnierten Upgrades in `_update_modules()`/`_auto_update_cycle()` (Pins/Quarantäne bleiben strikt aktiv) und `sync_repos(..., pull_newer=True)` (`--pull-newer`) für `import_newer_from_repo`.
+
+- **Modularer Core Telemetrie/Drift, Auto-Export Pipeline & GUI PromptBoard Board/Tag-Matrix (Tasks #-57, #-56, #-55, 2026-11-14):**
+  - **Telemetrie- & Dependency-Drift-Dashboard (Task #-57):** `ModulesHandler.get_telemetry_and_drift_report()` inkl. geteiltem Deterministik-Hasher `_compute_module_sha256()`, CLI `bach modules telemetry|drift`, API `GET /api/modules/telemetry` und Live-Telemetrie-Leiste in `index.html`. Fixt zudem den Quick-Prompt-API-Contract (`data.prompts || data.items`) auf dem Dashboard.
+  - **Live Tag-Filter-Matrix & Multi-Category Board (Task #-56):** `GET /api/prompt-library` um Multi-Tag-Filter (`tags`), Board-Filter (`board`), `tag_counts` und `boards` erweitert; neue Board-Endpunkte `GET /api/prompt-library/boards` & `POST /api/prompt-library/boards/assign` sowie klickbare Tag-Matrix und Kategorie-Board-Ansicht mit Direkt-Ausführung in `prompt-library.html`.
+  - **Auto-Export & Multi-Repo Sync Pipeline (Task #-55):** `ModulesHandler.sync_repos()` inkl. Sibling-Repo-Drifterkennung, Bundle-/SHA-256-Export nach `exports/modules/manifest_feed.json`, CLI `bach modules auto-export|sync-repos` und API `POST /api/modules/auto-export`.
 
 - **Modul-Paketmanager & Modularer Core Export (session, cache, scheduler) (Tasks #-36 & #-37, 2026-11-05):**
   - **Modularer Core Standalone-Export (Task #-36):**

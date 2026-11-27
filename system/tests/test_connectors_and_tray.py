@@ -1581,3 +1581,98 @@ def test_api_modules_status_and_sync():
     sync_data = sync_res.json()
     assert sync_data["status"] == "ok"
     assert "sync_report" in sync_data
+
+
+def test_tray_saved_prompt_boards_submenu_and_run_in_chat(tmp_path):
+    import sqlite3
+    db_file = tmp_path / "bach_boards.db"
+    with sqlite3.connect(db_file) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE prompt_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                text TEXT,
+                category TEXT,
+                tags TEXT
+            );
+            CREATE TABLE prompt_boards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TEXT
+            );
+            CREATE TABLE prompt_board_items (
+                board_id INTEGER NOT NULL,
+                prompt_id INTEGER NOT NULL,
+                added_at TEXT,
+                PRIMARY KEY (board_id, prompt_id)
+            );
+            INSERT INTO prompt_templates (id, name, text, category, tags)
+            VALUES (1, 'Board Check', 'Prüfe alle Board Prompts.', 'Dev', 'favorite');
+            INSERT INTO prompt_boards (id, title, description, created_at)
+            VALUES (10, 'Sprint Board', 'Tägliche Sprint-Prompts', '2026-11-14T12:00:00');
+            INSERT INTO prompt_board_items (board_id, prompt_id, added_at)
+            VALUES (10, 1, '2026-11-14T12:01:00');
+            """
+        )
+
+    class _MenuItem:
+        def __init__(self, text, action=None, **_kwargs):
+            self.text = text
+            self.action = action
+            self.submenu = action if isinstance(action, _Menu) else None
+
+    class _Menu:
+        SEPARATOR = object()
+        def __init__(self, *items):
+            self.items = list(items)
+        def __iter__(self):
+            return iter(self.items)
+
+    fake_pystray = MagicMock()
+    fake_pystray.MenuItem = _MenuItem
+    fake_pystray.Menu = _Menu
+
+    with patch.dict('sys.modules', {
+        'pystray': fake_pystray,
+        'PIL': MagicMock(),
+        'PIL.Image': MagicMock(),
+        'PIL.ImageDraw': MagicMock(),
+        'PIL.ImageFont': MagicMock(),
+    }):
+        import hub._services.chat.chat_tray as ct
+        with patch.object(ct, "BACH_DB", db_file):
+            tray = ct.BACHTray(host="testhost", port=9999, gui_port=8000)
+            tray.icon = MagicMock()
+            snap = tray.promptboard_smoke_snapshot()
+            assert snap["prompt_boards_count"] == 1
+            assert snap["prompt_boards"][0]["title"] == "Sprint Board"
+            assert snap["prompt_boards"][0]["prompt_count"] == 1
+            assert snap["prompt_board_submenu_ready"] is True
+
+            menu = tray._build_menu()
+            pb_item = next(i for i in menu if getattr(i, "text", "") == "PromptBoard")
+            boards_root = next(
+                sub for sub in pb_item.submenu
+                if "Gespeicherte Boards (1)" in getattr(sub, "text", "")
+            )
+            sprint_board = next(
+                b for b in boards_root.submenu
+                if "Sprint Board (1)" in getattr(b, "text", "")
+            )
+            board_prompt = next(
+                p for p in sprint_board.submenu
+                if getattr(p, "text", "") == "Board Check"
+            )
+            action_labels = [getattr(a, "text", "") for a in board_prompt.submenu]
+            assert any("Im Web-Chat ausführen: Board Check" in lbl for lbl in action_labels)
+
+            with patch.object(tray, "_copy_to_clipboard") as mock_copy, patch("webbrowser.open") as mock_open:
+                run_action = tray._make_prompt_run_in_chat_action("Run Board Prompt", autorun=True)
+                run_action()
+                mock_copy.assert_called_once_with("Run Board Prompt", notify=False)
+                opened_url = mock_open.call_args[0][0]
+                assert opened_url.startswith("http://testhost:8000/chat?")
+                assert "autorun=1" in opened_url
+                assert "prompt=Run+Board+Prompt" in opened_url

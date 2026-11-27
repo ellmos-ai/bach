@@ -423,3 +423,5 @@ desktop-installers/
 *.dump
 *dump
 /system/C:*
+.MODULES/.*.json
+.MODULES/.backup/

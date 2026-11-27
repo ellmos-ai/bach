@@ -253,6 +253,30 @@ style="background: var(--bg-dark); color: var(--text)">
                     Autarke, modularisierte Dienste von BACH & Ocean. Werden bei Updates synchronisiert und hot-wired:
                 </p>
 
+                <!-- Telemetrie & Dependency-Drift Zusammenfassung -->
+                <div id="modules-telemetry-bar" class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3 text-xs">
+                    <div class="bg-[#171b28] border border-[#1e2236] rounded px-2.5 py-1.5 flex items-center justify-between">
+                        <span class="text-gray-400">Lock-Intakt</span>
+                        <span id="mod-tel-intact" class="font-bold text-emerald-400">-</span>
+                    </div>
+                    <div class="bg-[#171b28] border border-[#1e2236] rounded px-2.5 py-1.5 flex items-center justify-between">
+                        <span class="text-gray-400">Checksum/Ver-Drift</span>
+                        <span id="mod-tel-drift" class="font-bold text-gray-300">-</span>
+                    </div>
+                    <div class="bg-[#171b28] border border-[#1e2236] rounded px-2.5 py-1.5 flex items-center justify-between">
+                        <span class="text-gray-400">Pins</span>
+                        <span id="mod-tel-pins" class="font-bold text-sky-400">-</span>
+                    </div>
+                    <div class="bg-[#171b28] border border-[#1e2236] rounded px-2.5 py-1.5 flex items-center justify-between">
+                        <span class="text-gray-400">Quarantäne</span>
+                        <span id="mod-tel-quarantine" class="font-bold text-gray-300">-</span>
+                    </div>
+                    <div class="bg-[#171b28] border border-[#1e2236] rounded px-2.5 py-1.5 flex items-center justify-between">
+                        <span class="text-gray-400">Fehlende Deps</span>
+                        <span id="mod-tel-deps" class="font-bold text-gray-300">-</span>
+                    </div>
+                </div>
+
                 <!-- Modul-Kacheln Grid -->
                 <div id="modules-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-3">
                     <!-- Wird dynamisch befüllt -->
@@ -284,8 +308,9 @@ style="background: var(--bg-dark); color: var(--text)">
                 if (!res.ok) return;
                 const data = await res.json();
                 const sel = document.getElementById('quick-prompt-select');
-                if (sel && data.items && Array.isArray(data.items)) {
-                    data.items.forEach(item => {
+                const items = data.prompts || data.items;
+                if (sel && Array.isArray(items)) {
+                    items.forEach(item => {
                         const opt = document.createElement('option');
                         opt.value = item.id;
                         opt.textContent = (item.category ? `[${item.category}] ` : '') + item.name;
@@ -305,10 +330,11 @@ style="background: var(--bg-dark); color: var(--text)">
                 const res = await fetch(`/api/prompt-library/${id}`);
                 if (!res.ok) return;
                 const data = await res.json();
-                if (data.item && data.item.text) {
+                const promptItem = data.prompt || data.item;
+                if (promptItem && promptItem.text) {
                     const textarea = document.getElementById('quick-prompt-input');
                     if (textarea) {
-                        textarea.value = data.item.text;
+                        textarea.value = promptItem.text;
                         textarea.focus();
                     }
                 }
@@ -393,6 +419,32 @@ style="background: var(--bg-dark); color: var(--text)">
                         `;
                         grid.appendChild(el);
                     }
+                }
+
+                // Telemetrie & Drift laden (Task -57)
+                try {
+                    const telRes = await fetch('/api/modules/telemetry');
+                    if (telRes.ok) {
+                        const telJson = await telRes.json();
+                        const s = telJson && telJson.data && telJson.data.summary ? telJson.data.summary : null;
+                        if (s) {
+                            const setTel = (id, val, warnColor) => {
+                                const el = document.getElementById(id);
+                                if (!el) return;
+                                el.textContent = String(val);
+                                if (warnColor) {
+                                    el.className = val > 0 ? `font-bold ${warnColor}` : 'font-bold text-emerald-400';
+                                }
+                            };
+                            setTel('mod-tel-intact', `${s.intact_count}/${s.total_installed}`, false);
+                            setTel('mod-tel-drift', s.drift_count, 'text-amber-400');
+                            setTel('mod-tel-pins', s.pinned_count, false);
+                            setTel('mod-tel-quarantine', s.quarantined_count, 'text-rose-400');
+                            setTel('mod-tel-deps', s.missing_deps_count, 'text-rose-400');
+                        }
+                    }
+                } catch (telErr) {
+                    console.debug('Module telemetry check failed:', telErr);
                 }
 
                 // Update-Check

@@ -1783,6 +1783,8 @@ class DeviceAuthMiddleware(BaseHTTPMiddleware):
         "/api/financial/summary",
         "/api/life/overview",
         "/api/automations",
+        "/api/modules/reconcile",
+        "/api/modules/telemetry",
     }
 
     async def _require_device(self, request: Request, call_next):
@@ -2461,6 +2463,250 @@ async def trigger_modules_wire():
         ok, msg = handler.handle("wire")
         return {"status": "ok" if ok else "error", "message": msg}
     except Exception as exc:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/feeds")
+async def get_modules_feeds():
+    """Return list of registered module manifest feeds and cached feed modules."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {
+            "status": "ok",
+            "feeds": handler.get_feeds(),
+            "feed_modules": handler.get_feed_modules(),
+        }
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/feeds")
+async def add_modules_feed(req: Request):
+    """Register a new module manifest feed."""
+    try:
+        body = await req.json()
+        url = str(body.get("url") or "").strip()
+        name = body.get("name")
+        if not url:
+            raise HTTPException(status_code=400, detail="Feld 'url' erforderlich")
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.add_feed(url, name=name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except HTTPException:
+        raise
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.delete("/api/modules/feeds/{feed_id}")
+async def delete_modules_feed(feed_id: str):
+    """Remove a registered module manifest feed."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.remove_feed(feed_id)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/feeds/sync")
+async def sync_modules_feeds_endpoint():
+    """Sync and refresh all registered module manifest feeds."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        res = handler.sync_feeds(force=True)
+        return {"status": "ok", "sync_result": res}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/pins")
+async def get_modules_version_pins():
+    """Return version pins, quarantined versions, and rollback history."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        return {"status": "ok", **handler.get_version_pins()}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/pin/{module_name}")
+async def pin_module_version_endpoint(module_name: str, req: Request):
+    """Pin a module to a specific or current version."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        version = body.get("version")
+        reason = str(body.get("reason") or "").strip()
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.pin_version(module_name, version=version, reason=reason)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.delete("/api/modules/pin/{module_name}")
+async def unpin_module_version_endpoint(module_name: str):
+    """Unpin a module version."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.unpin_version(module_name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/rollback/{module_name}")
+async def rollback_module_endpoint(module_name: str):
+    """Roll back a module to its previous backup."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler._rollback_module(module_name)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/test/{module_name}")
+@app.post("/api/modules/test")
+async def run_modules_ci_endpoint(module_name: Optional[str] = None):
+    """Run isolated CI tests for a module or all modules in .MODULES/."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, text, summary = handler.run_module_tests(target=module_name)
+        return {"status": "ok" if ok else "error", "passed": ok, "output": text, "summary": summary}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/bootstrap")
+async def bootstrap_modules_endpoint(req: Request):
+    """Run core bootstrap, generate lockfile or verify dependencies."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        action = body.get("action", "verify")
+        args = []
+        if action == "generate":
+            args.append("--generate-lockfile")
+        elif action == "verify":
+            args.append("--verify")
+        elif action == "minimal":
+            args.append("--minimal")
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg = handler.bootstrap_core(args)
+        return {"status": "ok" if ok else "error", "message": msg}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/scaffold")
+async def scaffold_module_endpoint(req: Request):
+    """Scaffold a new standalone module with manifest, service code, tests, and README."""
+    try:
+        body = await req.json() if req.headers.get("content-length", "0") != "0" else {}
+        name = str(body.get("name") or "").strip()
+        module_type = str(body.get("type") or "module").strip()
+        description = str(body.get("description") or "").strip()
+        force = bool(body.get("force", False))
+        if not name:
+            return {"status": "error", "error": "Modulname erforderlich"}
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, msg, summary = handler.scaffold_module(name, module_type=module_type, description=description, force=force)
+        return {"status": "ok" if ok else "error", "message": msg, "summary": summary}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/reconcile")
+async def reconcile_modules_endpoint():
+    """Reconcile installed modules, version pins, feeds, and lockfile."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        data = handler.reconcile_feeds_and_pins()
+        return {"status": "ok", "data": data}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.get("/api/modules/telemetry")
+async def modules_telemetry_endpoint():
+    """Return module telemetry, SHA-256 lockfile drift, dependencies, pins, and quarantine status."""
+    try:
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        data = handler.get_telemetry_and_drift_report()
+        return {"status": "ok", "data": data}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/auto-export")
+async def auto_export_modules_endpoint(req: Request = None):
+    """Run multi-repo drift check and auto-export updated modules + manifest_feed.json."""
+    try:
+        dry_run = True
+        bundle_deps = False
+        out_dir = None
+        modules = None
+        if req is not None and req.headers.get("content-length", "0") != "0":
+            try:
+                body = await req.json()
+                if isinstance(body, dict):
+                    dry_run = bool(body.get("dry_run", True))
+                    bundle_deps = bool(body.get("bundle_deps", False))
+                    out_dir = body.get("out_dir")
+                    if isinstance(body.get("modules"), list):
+                        modules = body.get("modules")
+            except Exception:
+                pass
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        data = handler.sync_repos(dry_run=dry_run, out_dir=out_dir, bundle_deps=bundle_deps, modules=modules)
+        return {"status": "ok" if data.get("errors_count", 0) == 0 else "error", "data": data}
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/modules/stack-update")
+async def stack_update_modules_endpoint(req: Request = None):
+    """Einheitliche Self-Update-Orchestrierung: Feeds, Module, Hot-Wiring & Drift-Check."""
+    try:
+        dry_run = False
+        strict = False
+        pull_newer = False
+        respect_lock = False
+        if req is not None and req.headers.get("content-length", "0") != "0":
+            try:
+                body = await req.json()
+                if isinstance(body, dict):
+                    dry_run = bool(body.get("dry_run", False))
+                    strict = bool(body.get("strict", False))
+                    pull_newer = bool(body.get("pull_newer", False))
+                    respect_lock = bool(body.get("respect_lock", False))
+            except Exception:
+                pass
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(BACH_DIR)
+        ok, data = handler.run_stack_update(
+            apply_updates=not dry_run,
+            dry_run=dry_run,
+            strict=strict,
+            pull_newer=pull_newer,
+            respect_lock=respect_lock,
+        )
+        return {"status": "ok" if ok else "error", "data": data}
+    except Exception:
         return {"status": "error", "error": public_error_message()}
 
 
@@ -12229,6 +12475,7 @@ class PromptCreateRequest(BaseModel):
 class PromptUpdateRequest(BaseModel):
     text: str
     tags: Optional[str] = None
+    category: Optional[str] = None
 
 
 def _prompt_library_row(row):
@@ -12260,9 +12507,30 @@ async def prompt_library_page():
     return HTMLResponse(content="<h1>Template prompt-library.html fehlt</h1>", status_code=404)
 
 
+def _parse_prompt_tags_list(raw_tags: Optional[str]) -> list:
+    """Normalisiert kommagetrennte oder JSON-kodierte Prompt-Tags für Tag-Matrix & Filterung."""
+    from hub.prompt import prompt_tags_text
+    txt = prompt_tags_text(raw_tags) or ""
+    seen = set()
+    out = []
+    for part in txt.split(","):
+        cleaned = part.strip()
+        low = cleaned.lower()
+        if cleaned and low not in seen:
+            seen.add(low)
+            out.append(cleaned)
+    return out
+
+
 @app.get("/api/prompt-library")
-async def list_prompt_library(q: Optional[str] = None, category: Optional[str] = None, favorites: Optional[bool] = None):
-    """Listet Prompt-Templates aus der BACH-DB (optional Suche/Kategorie/Favoriten)."""
+async def list_prompt_library(
+    q: Optional[str] = None,
+    category: Optional[str] = None,
+    favorites: Optional[bool] = None,
+    tags: Optional[str] = None,
+    board: Optional[str] = None,
+):
+    """Listet Prompt-Templates aus der BACH-DB inkl. Tag-Filter-Matrix und Board-Übersicht."""
     from hub.prompt import prompt_tags_text
     conn = get_bach_db()
     try:
@@ -12278,17 +12546,193 @@ async def list_prompt_library(q: Optional[str] = None, category: Optional[str] =
             params.append(category)
         if favorites:
             clauses.append("(tags LIKE '%favorite%' OR tags LIKE '%favorit%' OR tags LIKE '%star%' OR tags LIKE '%pinned%')")
+        if board:
+            clauses.append(
+                "id IN (SELECT pbi.prompt_id FROM prompt_board_items pbi "
+                "JOIN prompt_boards pb ON pb.id = pbi.board_id "
+                "WHERE CAST(pb.id AS TEXT) = ? OR pb.title = ?)"
+            )
+            params.extend([board, board])
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY name"
         rows = conn.execute(sql, params).fetchall()
+
+        prompts = [_prompt_library_row(r) for r in rows]
+        tag_filters = [t.strip().lower() for t in (tags or "").split(",") if t.strip()]
+        if tag_filters:
+            filtered_prompts = []
+            for p in prompts:
+                p_tags_low = {t.lower() for t in _parse_prompt_tags_list(p.get("tags"))}
+                if all(tf in p_tags_low for tf in tag_filters):
+                    filtered_prompts.append(p)
+            prompts = filtered_prompts
+
+        tag_counts_map = {}
+        all_rows = conn.execute("SELECT tags FROM prompt_templates WHERE tags IS NOT NULL").fetchall()
+        for tr in all_rows:
+            for t in _parse_prompt_tags_list(tr["tags"]):
+                key = t.lower()
+                if key not in tag_counts_map:
+                    tag_counts_map[key] = {"tag": t, "count": 0}
+                tag_counts_map[key]["count"] += 1
+        tag_counts = sorted(tag_counts_map.values(), key=lambda x: (-x["count"], x["tag"].lower()))
+
         cats = conn.execute(
             "SELECT DISTINCT category FROM prompt_templates WHERE category IS NOT NULL ORDER BY category"
         ).fetchall()
+
+        boards = []
+        try:
+            board_rows = conn.execute(
+                "SELECT pb.id, pb.title, pb.description, COUNT(pbi.prompt_id) AS item_count "
+                "FROM prompt_boards pb LEFT JOIN prompt_board_items pbi ON pb.id = pbi.board_id "
+                "GROUP BY pb.id ORDER BY pb.title"
+            ).fetchall()
+            boards = [row_to_dict(b) for b in board_rows]
+        except sqlite3.OperationalError:
+            boards = []
+
         return {
-            "prompts": [_prompt_library_row(r) for r in rows],
+            "prompts": prompts,
             "categories": [c["category"] for c in cats],
+            "tag_counts": tag_counts,
+            "boards": boards,
         }
+    finally:
+        conn.close()
+
+
+@app.get("/api/prompt-library/boards")
+async def list_prompt_library_boards():
+    """Listet alle Prompt-Boards inkl. zugeordneter Prompt-IDs."""
+    conn = get_bach_db()
+    try:
+        try:
+            board_rows = conn.execute(
+                "SELECT id, title, description, created_at FROM prompt_boards ORDER BY title"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {"boards": []}
+        boards = []
+        for b in board_rows:
+            b_dict = row_to_dict(b)
+            items = conn.execute(
+                "SELECT prompt_id FROM prompt_board_items WHERE board_id = ? ORDER BY added_at, prompt_id",
+                (b_dict["id"],),
+            ).fetchall()
+            b_dict["prompt_ids"] = [it["prompt_id"] for it in items]
+            b_dict["item_count"] = len(items)
+            boards.append(b_dict)
+        return {"boards": boards}
+    finally:
+        conn.close()
+
+
+@app.get("/api/prompt-library/boards/{board_ref}")
+async def get_prompt_library_board_detail(board_ref: str):
+    """Liefert ein Prompt-Board (per ID oder Titel) inkl. geordneter Prompts für den Board-Runner."""
+    conn = get_bach_db()
+    try:
+        try:
+            b_row = None
+            if str(board_ref).strip().isdigit():
+                b_row = conn.execute(
+                    "SELECT id, title, description, created_at FROM prompt_boards WHERE id = ?",
+                    (int(str(board_ref).strip()),),
+                ).fetchone()
+            if not b_row:
+                b_row = conn.execute(
+                    "SELECT id, title, description, created_at FROM prompt_boards WHERE LOWER(title) = LOWER(?)",
+                    (str(board_ref).strip(),),
+                ).fetchone()
+        except sqlite3.OperationalError:
+            raise HTTPException(status_code=404, detail="Prompt-Boards Tabelle nicht vorhanden") from None
+        if not b_row:
+            raise HTTPException(status_code=404, detail="Board nicht gefunden")
+        items = conn.execute(
+            """SELECT pt.id, pt.name, pt.text, pt.category, pt.tags, pt.purpose, pt.is_default,
+                      pbi.added_at
+               FROM prompt_board_items pbi
+               JOIN prompt_templates pt ON pt.id = pbi.prompt_id
+               WHERE pbi.board_id = ?
+               ORDER BY pbi.added_at, pt.name""",
+            (b_row["id"],),
+        ).fetchall()
+        b_dict = row_to_dict(b_row)
+        prompts = []
+        for r in items:
+            d = row_to_dict(r)
+            d["prompt_id"] = d["id"]
+            prompts.append(d)
+        b_dict["prompts"] = prompts
+        b_dict["prompt_ids"] = [p["id"] for p in prompts]
+        b_dict["item_count"] = len(prompts)
+        return {"ok": True, "board": b_dict}
+    finally:
+        conn.close()
+
+
+@app.post("/api/prompt-library/boards/assign")
+async def assign_prompt_to_board_or_category(req: Request):
+    """Ordnet einen Prompt einer Kategorie und/oder einem Prompt-Board zu."""
+    try:
+        body = await req.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Ungültiges JSON-Format") from None
+
+    prompt_id = body.get("prompt_id")
+    if prompt_id is None:
+        raise HTTPException(status_code=400, detail="prompt_id erforderlich")
+
+    conn = get_bach_db()
+    try:
+        p_row = conn.execute("SELECT id FROM prompt_templates WHERE id = ?", (int(prompt_id),)).fetchone()
+        if not p_row:
+            raise HTTPException(status_code=404, detail="Prompt nicht gefunden")
+
+        now = datetime.now().isoformat()
+        updated_category = None
+        if "category" in body:
+            cat_val = (body.get("category") or "").strip() or None
+            conn.execute(
+                "UPDATE prompt_templates SET category = ?, updated_at = ? WHERE id = ?",
+                (cat_val, now, int(prompt_id)),
+            )
+            updated_category = cat_val
+
+        board_title = (body.get("board_title") or "").strip()
+        board_id = body.get("board_id")
+        action = (body.get("action") or "add").strip().lower()
+        if board_title or board_id is not None:
+            if board_id is None and board_title:
+                existing_b = conn.execute("SELECT id FROM prompt_boards WHERE title = ?", (board_title,)).fetchone()
+                if existing_b:
+                    board_id = existing_b["id"]
+                elif action != "remove":
+                    cur = conn.execute(
+                        "INSERT INTO prompt_boards (title, description, created_at) VALUES (?, ?, ?)",
+                        (board_title, body.get("description") or None, now),
+                    )
+                    board_id = cur.lastrowid
+            if board_id is not None:
+                if action == "remove":
+                    conn.execute(
+                        "DELETE FROM prompt_board_items WHERE board_id = ? AND prompt_id = ?",
+                        (int(board_id), int(prompt_id)),
+                    )
+                else:
+                    exists_item = conn.execute(
+                        "SELECT 1 FROM prompt_board_items WHERE board_id = ? AND prompt_id = ?",
+                        (int(board_id), int(prompt_id)),
+                    ).fetchone()
+                    if not exists_item:
+                        conn.execute(
+                            "INSERT INTO prompt_board_items (board_id, prompt_id, added_at) VALUES (?, ?, ?)",
+                            (int(board_id), int(prompt_id), now),
+                        )
+        conn.commit()
+        return {"ok": True, "prompt_id": int(prompt_id), "category": updated_category, "board_id": board_id}
     finally:
         conn.close()
 
@@ -12389,8 +12833,8 @@ async def update_prompt_library_entry(prompt_id: int, req: PromptUpdateRequest):
             (prompt_id, max_v + 1, row["text"], row["tags"], now),
         )
         conn.execute(
-            "UPDATE prompt_templates SET text = ?, tags = COALESCE(?, tags), updated_at = ? WHERE id = ?",
-            (req.text, serialize_prompt_tags(req.tags), now, prompt_id),
+            "UPDATE prompt_templates SET text = ?, tags = COALESCE(?, tags), category = COALESCE(?, category), updated_at = ? WHERE id = ?",
+            (req.text, serialize_prompt_tags(req.tags), req.category, now, prompt_id),
         )
         conn.commit()
         return {"ok": True, "archived_version": max_v + 1}
@@ -12571,6 +13015,27 @@ async def sync_promptboard_library(req: Request = None):
         raise HTTPException(status_code=422, detail=f"PromptBoard-Sync fehlgeschlagen: {exc}") from exc
 
 
+@app.post("/api/prompt-library/import-software")
+async def import_software_prompts_endpoint(req: Request = None):
+    """Import prompt templates from .SOFTWARE/_prompts directory into BACH prompt library."""
+    from hub.prompt import PromptHandler
+    dry_run = False
+    software_dir = None
+    if req is not None and req.headers.get("content-length", "0") != "0":
+        try:
+            body = await req.json()
+            if isinstance(body, dict):
+                dry_run = bool(body.get("dry_run", False))
+                software_dir = body.get("software_dir")
+        except Exception:
+            pass
+    try:
+        handler = PromptHandler(BACH_DIR, connection_factory=get_bach_db)
+        return handler.import_software_prompts(software_dir=software_dir, dry_run=dry_run)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"Software-Prompts-Import fehlgeschlagen: {exc}") from exc
+
+
 @app.get("/api/prompt-generator/templates")
 
 async def get_prompt_templates():
@@ -12646,6 +13111,12 @@ class PromptSendRequest(BaseModel):
     variables: Optional[dict] = None
 
     include_header: Optional[bool] = True  # Toggle fuer Auto-Session Header
+
+    persona: Optional[str] = "buddha"
+
+    language: Optional[str] = "de"
+
+    stream: Optional[bool] = False
 
 
 
@@ -12821,6 +13292,82 @@ async def copy_prompt_to_clipboard(req: PromptSendRequest):
     except Exception as e:
 
         return {"status": "error", "message": public_error_message()}
+
+
+@app.post("/api/prompts/execute")
+@app.post("/api/prompt-generator/send/chat")
+async def execute_prompt_endpoint(req: PromptSendRequest, request: Request):
+    """Directly execute a prompt via local cortex responder / chat backend and broadcast to GUI."""
+    try:
+        clean_prompt = str(req.prompt or "").strip()
+        if not clean_prompt:
+            raise HTTPException(status_code=400, detail="Prompt darf nicht leer sein")
+
+        persona = req.persona or "buddha"
+        chat_id = _talk_chat_scope(getattr(request.state, "device", None), "buddha_talk")
+        scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+        try:
+            reply = _talk_cortex_responder(clean_prompt, persona=persona, language=req.language or "de")
+        finally:
+            _TALK_CALLER_SCOPE.reset(scope_token)
+        clean_reply = _strip_talk_control_tags(reply)
+
+        if "ws_manager" in globals() and ws_manager is not None:
+            try:
+                await ws_manager.broadcast({
+                    "type": "prompt_executed",
+                    "persona": persona,
+                    "prompt": clean_prompt[:150],
+                    "reply_preview": clean_reply[:150],
+                    "timestamp": datetime.now().isoformat(),
+                })
+            except Exception:
+                pass
+
+        return {
+            "status": "ok",
+            "reply": reply,
+            "clean_reply": clean_reply,
+            "persona": persona,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        return {"status": "error", "error": public_error_message()}
+
+
+@app.post("/api/prompts/stream")
+async def stream_prompt_endpoint(req: PromptSendRequest, request: Request):
+    """Stream prompt execution chunk by chunk via Server-Sent Events (SSE)."""
+    from starlette.responses import StreamingResponse
+
+    chat_id = _talk_chat_scope(getattr(request.state, "device", None), "buddha_talk")
+
+    async def event_generator():
+        clean_prompt = str(req.prompt or "").strip()
+        if not clean_prompt:
+            yield "event: error\ndata: Prompt darf nicht leer sein\n\n"
+            return
+
+        yield f"event: start\ndata: {json.dumps({'persona': req.persona or 'buddha', 'timestamp': datetime.now().isoformat()})}\n\n"
+
+        scope_token = _TALK_CALLER_SCOPE.set(chat_id)
+        try:
+            reply = _talk_cortex_responder(clean_prompt, persona=req.persona or "buddha", language=req.language or "de")
+        finally:
+            _TALK_CALLER_SCOPE.reset(scope_token)
+        clean_text = _strip_talk_control_tags(reply)
+
+        words = clean_text.split(" ")
+        for i, w in enumerate(words):
+            chunk = w + (" " if i < len(words) - 1 else "")
+            yield f"data: {json.dumps({'chunk': chunk, 'index': i})}\n\n"
+            await asyncio.sleep(0.01)
+
+        yield f"event: done\ndata: {json.dumps({'total_chars': len(clean_text)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 

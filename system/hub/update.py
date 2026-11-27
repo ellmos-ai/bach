@@ -116,6 +116,7 @@ class UpdateHandler(BaseHandler):
             "migrations": t("update_migrations_desc", default="Migrationen anzeigen/ausfuehren"),
             "skills": t("update_skills_desc", default="Skills-Versionen pruefen und synchronisieren (bach update skills [--apply])"),
             "modules": t("update_modules_desc", default="Module- und Adapter-Status pruefen und synchronisieren (bach update modules [--sync])"),
+            "stack": t("update_stack_desc", default="Einheitliche Stack-Orchestrierung: Feeds, Module, Hot-Wiring & Drift-Pruefung (bach update stack [--dry-run] [--strict])"),
             "all": t("update_all_desc", default="Gesamtes System pruefen: Core, Skills und Module"),
         }
 
@@ -134,6 +135,8 @@ class UpdateHandler(BaseHandler):
             return self._update_skills(args, dry_run)
         elif operation == "modules":
             return self._update_modules(args, dry_run)
+        elif operation == "stack":
+            return self._update_stack(args, dry_run)
         elif operation == "all":
             return self._update_all(args, dry_run)
         elif operation == "migrations":
@@ -1203,6 +1206,12 @@ class UpdateHandler(BaseHandler):
             lines.append(f"\n[WARNUNG] ModulesHandler update fehlgeschlagen: {exc}")
 
         return True, "\n".join(lines)
+
+    def _update_stack(self, args: list, dry_run: bool = False) -> tuple:
+        """Einheitliche Self-Update-Orchestrierung: Feeds, Module, Hot-Wiring & Drift-Prüfung."""
+        from hub.modules import ModulesHandler
+        handler = ModulesHandler(self.base_path)
+        return handler._stack_update_cli(args, dry_run=dry_run)
 
     def _update_all(self, args: list, dry_run: bool = False) -> tuple:
         """Führt Core-Check, Skills-Check und Modules-Status zusammen aus."""
