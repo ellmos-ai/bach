@@ -22,13 +22,13 @@ import os
 import re
 import sqlite3
 from contextlib import closing, contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from math import isfinite
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Body
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -3423,7 +3423,9 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
 
 
 def _parse_calendar_filter(calendars: Optional[str]) -> Optional[set[str]]:
-    if not calendars or calendars.strip().lower() in {"", "all", "*"}:
+    if not isinstance(calendars, str):
+        calendars = getattr(calendars, "default", None)
+    if not isinstance(calendars, str) or calendars.strip().lower() in {"", "all", "*"}:
         return None
     parts = {p.strip().lower() for p in calendars.split(",") if p.strip()}
     return parts or None
@@ -3449,6 +3451,275 @@ def _matches_calendar_date(dt_str: Optional[str], view: str, date_str: Optional[
         except ValueError:
             return True
     return True
+
+
+_TERMINPILOT_FINAL_STATUSES = frozenset({
+    "finalized",
+    "confirmed",
+    "closed",
+    "accepted",
+    "bestaetigt",
+    "entschieden",
+    "abgeschlossen",
+})
+_ISO_DT_SLOT_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2})(?:[T\s]+(\d{2}:\d{2}(?::\d{2})?))?(?:\s*-\s*(\d{2}:\d{2}(?::\d{2})?))?"
+)
+
+
+def _is_usable_local_file(path: Path, max_bytes: Optional[int] = None) -> bool:
+    if sys.platform == "darwin":
+        try:
+            if "/Library/CloudStorage/" in os.path.realpath(path):
+                return False
+        except OSError:
+            return False
+    try:
+        st = path.stat()
+        if not path.is_file() or st.st_size <= 0:
+            return False
+        if max_bytes is not None and st.st_size > max_bytes:
+            return False
+        return True
+    except OSError:
+        return False
+
+
+def _bach_data_dir_candidates() -> List[Path]:
+    raw_dirs: List[Path] = []
+    for env_name in ("BACH_DATA_DIR", "BACH_LOCAL_DIR"):
+        env_val = (os.environ.get(env_name) or "").strip()
+        if env_val:
+            raw_dirs.append(Path(env_val).expanduser())
+    try:
+        raw_dirs.append(Path(BACH_DB).expanduser().parent)
+    except Exception:
+        pass
+    if os.environ.get("BACH_TEST_MODE", "").strip() != "1":
+        raw_dirs.append(_SYSTEM_ROOT / "data")
+    seen: set[Path] = set()
+    unique: List[Path] = []
+    for d in raw_dirs:
+        try:
+            key = d.resolve()
+        except OSError:
+            key = d
+        if key not in seen:
+            seen.add(key)
+            unique.append(d)
+    return unique
+
+
+def _resolve_terminpilot_db() -> Optional[Path]:
+    env_db = (os.environ.get("BACH_TERMINPILOT_DB") or "").strip()
+    if env_db:
+        cand = Path(env_db).expanduser()
+        return cand if _is_usable_local_file(cand) else None
+    for data_dir in _bach_data_dir_candidates():
+        cand = data_dir / "terminpilot.db"
+        if _is_usable_local_file(cand):
+            return cand
+    return None
+
+
+def _normalize_tp_time(raw: Any) -> Optional[str]:
+    if raw is None:
+        return None
+    txt = str(raw).strip()
+    if not txt:
+        return None
+    if re.fullmatch(r"\d{2}:\d{2}", txt):
+        return f"{txt}:00"
+    if re.fullmatch(r"\d{2}:\d{2}:\d{2}", txt):
+        return txt
+    return None
+
+
+def _normalize_tp_slot_pair(
+    raw_date: Any,
+    raw_start_time: Any = None,
+    raw_end_time: Any = None,
+) -> tuple[Optional[str], Optional[str]]:
+    if raw_date is None:
+        return None, None
+    txt = str(raw_date).strip()
+    if not txt:
+        return None, None
+    match = _ISO_DT_SLOT_RE.match(txt)
+    if not match:
+        return None, None
+    date_part, inline_start, inline_end = match.groups()
+    try:
+        datetime.strptime(date_part, "%Y-%m-%d")
+    except ValueError:
+        return None, None
+    start_t = _normalize_tp_time(inline_start) or _normalize_tp_time(raw_start_time) or "09:00:00"
+    end_t = _normalize_tp_time(inline_end) or _normalize_tp_time(raw_end_time)
+    if end_t is None and raw_end_time:
+        end_match = _ISO_DT_SLOT_RE.match(str(raw_end_time).strip())
+        if end_match and end_match.group(1):
+            end_dt = f"{end_match.group(1)} {_normalize_tp_time(end_match.group(2)) or '10:00:00'}"
+        else:
+            end_dt = None
+    else:
+        end_dt = f"{date_part} {end_t}" if end_t else None
+    return f"{date_part} {start_t}", end_dt
+
+
+def _collect_terminpilot_readthrough_events(
+    *,
+    view: str,
+    date_str: Optional[str],
+    silo_filter: Optional[set[str]],
+) -> List[Dict[str, Any]]:
+    if silo_filter is not None and "terminpilot" not in silo_filter:
+        return []
+    db_path = _resolve_terminpilot_db()
+    if db_path is None:
+        return []
+    events: List[Dict[str, Any]] = []
+    seen_poll_ids: set[int] = set()
+    seen_entry_ids: set[int] = set()
+    try:
+        uri = db_path.resolve().as_uri() + "?mode=ro"
+        tp_conn = sqlite3.connect(uri, uri=True, timeout=2.0)
+        tp_conn.row_factory = sqlite3.Row
+    except (sqlite3.Error, OSError, ValueError):
+        return []
+
+    try:
+        tables = {
+            row[0]
+            for row in tp_conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+
+        if "polls" in tables:
+            poll_cols = {row[1] for row in tp_conn.execute("PRAGMA table_info(polls)").fetchall()}
+            slot_cols = [
+                c
+                for c in (
+                    "final_slot",
+                    "confirmed_slot",
+                    "selected_slot",
+                    "chosen_date",
+                    "selected_date",
+                    "final_date",
+                    "start_datetime",
+                    "date",
+                )
+                if c in poll_cols
+            ]
+            if slot_cols:
+                for raw in tp_conn.execute("SELECT * FROM polls").fetchall():
+                    row = dict(raw)
+                    if "status" in poll_cols:
+                        st = str(row.get("status") or "").strip().lower()
+                        if st not in _TERMINPILOT_FINAL_STATUSES:
+                            continue
+                    raw_slot = next((row.get(c) for c in slot_cols if row.get(c) not in (None, "")), None)
+                    raw_start_t = row.get("chosen_time_start") or row.get("time_start") or row.get("start_time")
+                    raw_end_t = row.get("chosen_time_end") or row.get("time_end") or row.get("end_time") or row.get("end_datetime")
+                    start_dt, end_dt = _normalize_tp_slot_pair(raw_slot, raw_start_t, raw_end_t)
+                    if not start_dt:
+                        continue
+                    poll_id = row.get("id")
+                    if isinstance(poll_id, int):
+                        seen_poll_ids.add(poll_id)
+                    if not _matches_calendar_date(start_dt, view, date_str):
+                        continue
+                    title = str(row.get("title") or row.get("name") or row.get("topic") or "TerminPilot-Termin").strip()
+                    events.append({
+                        "id": f"tp_poll_{poll_id if poll_id is not None else len(events) + 1}",
+                        "title": title,
+                        "event_type": "terminpilot",
+                        "calendar_id": "terminpilot",
+                        "start_datetime": start_dt,
+                        "end_datetime": end_dt,
+                        "location": str(row.get("location") or "").strip(),
+                        "description": str(row.get("description") or row.get("topic") or "Abgestimmter Termin aus TerminPilot"),
+                        "status": "bestaetigt",
+                        "read_through": True,
+                        "origin": "user",
+                    })
+
+        if "calendar_entries" in tables:
+            entry_cols = {row[1] for row in tp_conn.execute("PRAGMA table_info(calendar_entries)").fetchall()}
+            date_col = next((c for c in ("start_datetime", "date", "final_slot") if c in entry_cols), None)
+            if date_col:
+                for raw in tp_conn.execute("SELECT * FROM calendar_entries").fetchall():
+                    row = dict(raw)
+                    src_poll_id = row.get("source_poll_id")
+                    if isinstance(src_poll_id, int) and src_poll_id in seen_poll_ids:
+                        continue
+                    start_dt, end_dt = _normalize_tp_slot_pair(
+                        row.get(date_col),
+                        row.get("time_start"),
+                        row.get("time_end") or row.get("end_datetime"),
+                    )
+                    if not start_dt:
+                        continue
+                    entry_id = row.get("id")
+                    if isinstance(entry_id, int):
+                        seen_entry_ids.add(entry_id)
+                    if not _matches_calendar_date(start_dt, view, date_str):
+                        continue
+                    events.append({
+                        "id": f"tp_entry_{entry_id if entry_id is not None else len(events) + 1}",
+                        "title": str(row.get("title") or "TerminPilot-Kalendereintrag").strip(),
+                        "event_type": "terminpilot",
+                        "calendar_id": "terminpilot",
+                        "start_datetime": start_dt,
+                        "end_datetime": end_dt,
+                        "location": str(row.get("location") or "").strip(),
+                        "description": f"Read-Through aus TerminPilot ({row.get('source') or 'calendar'})",
+                        "status": "bestaetigt",
+                        "read_through": True,
+                        "origin": "user",
+                    })
+
+        if "bookings" in tables:
+            booking_cols = {row[1] for row in tp_conn.execute("PRAGMA table_info(bookings)").fetchall()}
+            date_col = next((c for c in ("date", "start_datetime", "final_slot") if c in booking_cols), None)
+            if date_col:
+                for raw in tp_conn.execute("SELECT * FROM bookings").fetchall():
+                    row = dict(raw)
+                    if "status" in booking_cols:
+                        st = str(row.get("status") or "").strip().lower()
+                        if st not in _TERMINPILOT_FINAL_STATUSES:
+                            continue
+                    cal_entry_id = row.get("calendar_entry_id")
+                    if isinstance(cal_entry_id, int) and cal_entry_id in seen_entry_ids:
+                        continue
+                    start_dt, end_dt = _normalize_tp_slot_pair(
+                        row.get(date_col),
+                        row.get("time_start"),
+                        row.get("time_end") or row.get("end_datetime"),
+                    )
+                    if not start_dt or not _matches_calendar_date(start_dt, view, date_str):
+                        continue
+                    bk_id = row.get("id")
+                    title = str(row.get("title") or "").strip()
+                    if not title:
+                        booker = str(row.get("booker_name") or "").strip()
+                        title = f"Buchung: {booker}" if booker else "TerminPilot Buchung"
+                    events.append({
+                        "id": f"tp_booking_{bk_id if bk_id is not None else len(events) + 1}",
+                        "title": title,
+                        "event_type": "terminpilot",
+                        "calendar_id": "terminpilot",
+                        "start_datetime": start_dt,
+                        "end_datetime": end_dt,
+                        "location": str(row.get("location") or "").strip(),
+                        "description": str(row.get("notes") or "Bestätigte TerminPilot-Buchung"),
+                        "status": "bestaetigt",
+                        "read_through": True,
+                        "origin": "user",
+                    })
+    except (sqlite3.Error, OSError, ValueError):
+        return events
+    finally:
+        tp_conn.close()
+    return events
 
 
 def _collect_readthrough_calendar_events(
@@ -3576,6 +3847,14 @@ def _collect_readthrough_calendar_events(
                 })
         except Exception:
             pass
+
+    extra.extend(
+        _collect_terminpilot_readthrough_events(
+            view=view,
+            date_str=date_str,
+            silo_filter=silo_filter,
+        )
+    )
     return extra
 
 
@@ -3615,11 +3894,11 @@ async def get_calendar_profiles():
 
 @router.get("/calendar/events")
 async def get_calendar_events(
-    view: str = Query("month", description="day|week|month|year|list"),
-    date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
-    include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden"),
-    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown"),
-    calendars: Optional[str] = Query("all", description="all oder kommaseparierte Kalender-Silos"),
+    view: Annotated[str, Query(description="day|week|month|year|list")] = "month",
+    date: Annotated[Optional[str], Query(description="ISO-Datum YYYY-MM-DD")] = None,
+    include_routines: Annotated[bool, Query(description="Fällige Haushalts-/Lebensroutinen einblenden")] = True,
+    origin: Annotated[Optional[str], Query(description="all|system|user|without_system|unknown")] = "all",
+    calendars: Annotated[Optional[str], Query(description="all oder kommaseparierte Kalender-Silos")] = "all",
 ):
     """Liefert Termine aus assistant_calendar und Read-Through-Silos (Routinen, Finanzen, Gesundheit, Geburtstage)."""
     conn = _get_conn()
@@ -3790,22 +4069,37 @@ async def calendar_event_silo_action(event_id: int, action: str, payload: Dict[s
 
 @router.get("/calendar/export")
 async def export_calendar_report(
-    view: str = Query("month", description="day|week|month|year|list"),
-    date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
-    calendars: Optional[str] = Query("all", description="all oder kommaseparierte Silos"),
-    format: str = Query("html", description="html|md|txt|ics"),
+    view: Annotated[str, Query(description="day|week|month|year|list")] = "month",
+    date: Annotated[Optional[str], Query(description="ISO-Datum YYYY-MM-DD")] = None,
+    calendars: Annotated[Optional[str], Query(description="all oder kommaseparierte Silos")] = "all",
+    format: Annotated[str, Query(description="html|md|txt|ics|pdf")] = "html",
 ):
-    """Exportiert den gewählten Kalender-Ausschnitt als druckreifes HTML-Blatt, Markdown, Text oder ICS."""
+    """Exportiert den gewählten Kalender-Ausschnitt als druckreifes HTML-Blatt, PDF, Markdown, Text oder ICS."""
     from html import escape as html_escape
-    from fastapi.responses import Response
 
     fmt = format.strip().lower()
-    if fmt not in {"html", "md", "txt", "ics"}:
-        raise HTTPException(status_code=400, detail="Erlaubte Exportformate: html, md, txt, ics")
+    if fmt not in {"html", "md", "txt", "ics", "pdf"}:
+        raise HTTPException(status_code=400, detail="Erlaubte Exportformate: html, md, txt, ics, pdf")
 
     data = await get_calendar_events(view=view, date=date, include_routines=True, origin="all", calendars=calendars)
     events = data.get("events", [])
     heading = f"OCEAN Kalender-Auszug ({view}, {date or 'alle'}, Silos: {calendars or 'all'})"
+
+    if fmt == "pdf":
+        from .pdf_export import render_calendar_pdf
+
+        pdf_bytes = render_calendar_pdf(
+            view=view,
+            title=heading,
+            date_str=date,
+            events=events,
+            profiles=_CALENDAR_DEFAULT_PROFILES,
+        )
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="kalender-export.pdf"'},
+        )
 
     if fmt == "md":
         lines = [f"# {heading}", "", f"Anzahl Termine: **{len(events)}**", ""]
@@ -3876,6 +4170,451 @@ async def delete_calendar_event(event_id: int):
         return {"ok": True, "deleted_id": event_id}
     finally:
         conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 9b. AGENDA (PERSÖNLICHE / GEMEINSAME AGENDA & EXPORT)
+# ═══════════════════════════════════════════════════════════════
+
+_AGENDA_HORIZONS = ["short", "mid", "long"]
+_AGENDA_HORIZON_ALIASES: Dict[str, str] = {
+    "short": "short",
+    "kurz": "short",
+    "kurzfristig": "short",
+    "mid": "mid",
+    "medium": "mid",
+    "mittel": "mid",
+    "mittelfristig": "mid",
+    "long": "long",
+    "lang": "long",
+    "langfristig": "long",
+}
+_PRIORITY_WEIGHT_MAP: Dict[str, int] = {
+    "p1": 95,
+    "critical": 90,
+    "hoch": 80,
+    "p2": 75,
+    "high": 75,
+    "p3": 50,
+    "medium": 50,
+    "mittel": 50,
+    "p4": 25,
+    "low": 25,
+    "niedrig": 25,
+}
+_AGENDA_DONE_STATUSES = frozenset({"done", "completed", "erledigt", "closed"})
+
+
+def _agenda_file_candidates() -> List[Path]:
+    cands: List[Path] = []
+    env_file = (os.environ.get("BACH_AGENDA_FILE") or "").strip()
+    if env_file:
+        cands.append(Path(env_file).expanduser())
+    for data_dir in _bach_data_dir_candidates():
+        cands.append(data_dir / "agenda.json")
+    cands.append(Path.home() / ".agenda" / "agenda.json")
+    seen: set[Path] = set()
+    unique: List[Path] = []
+    for cand in cands:
+        try:
+            key = cand.resolve()
+        except OSError:
+            key = cand
+        if key not in seen:
+            seen.add(key)
+            unique.append(cand)
+    return unique
+
+
+def _weight_to_priority(weight: int) -> str:
+    if weight >= 85:
+        return "P1"
+    if weight >= 65:
+        return "P2"
+    if weight >= 40:
+        return "P3"
+    return "P4"
+
+
+def _parse_agenda_anchor_date(raw: Optional[str]) -> Optional[date]:
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() == "ongoing" or s.endswith("+"):
+        return None
+    if ".." in s:
+        s = s.split("..", 1)[1].strip()
+    if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+        try:
+            return date.fromisoformat(s[:10])
+        except ValueError:
+            return None
+    if re.fullmatch(r"\d{4}-\d{2}", s):
+        y, m = int(s[:4]), int(s[5:7])
+        if 1 <= m <= 12:
+            import calendar as pycal
+            return date(y, m, pycal.monthrange(y, m)[1])
+    q_match = re.fullmatch(r"(\d{4})-Q([1-4])", s, flags=re.IGNORECASE)
+    if q_match:
+        y, q = int(q_match.group(1)), int(q_match.group(2))
+        m = q * 3
+        import calendar as pycal
+        return date(y, m, pycal.monthrange(y, m)[1])
+    h_match = re.fullmatch(r"(\d{4})-H([12])", s, flags=re.IGNORECASE)
+    if h_match:
+        y, h = int(h_match.group(1)), int(h_match.group(2))
+        return date(y, 6, 30) if h == 1 else date(y, 12, 31)
+    if re.fullmatch(r"\d{4}", s):
+        return date(int(s), 12, 31)
+    return None
+
+
+def _infer_agenda_horizon(
+    raw_horizon: Any,
+    timeframe: Any,
+    deadline_val: Any,
+    weight: int,
+    *,
+    today: Optional[date] = None,
+) -> str:
+    if isinstance(raw_horizon, str) and raw_horizon.strip():
+        mapped = _AGENDA_HORIZON_ALIASES.get(raw_horizon.strip().lower())
+        if mapped:
+            return mapped
+    tf_str = str(timeframe or "").strip()
+    dl_str = str(deadline_val or "").strip()
+    if tf_str.lower() == "ongoing" or tf_str.endswith("+"):
+        return "long"
+    ref = today or datetime.now(timezone.utc).date()
+    anchor = _parse_agenda_anchor_date(dl_str) or _parse_agenda_anchor_date(tf_str)
+    if anchor is not None:
+        delta = (anchor - ref).days
+        if delta <= 30:
+            return "short"
+        if delta <= 180:
+            return "mid"
+        return "long"
+    if weight >= 80:
+        return "short"
+    if weight >= 40:
+        return "mid"
+    return "long"
+
+
+def _normalize_agenda_weight(raw_weight: Any, raw_priority: Any) -> int:
+    if isinstance(raw_weight, (int, float)) and not isinstance(raw_weight, bool):
+        return max(1, min(100, int(round(raw_weight))))
+    if isinstance(raw_weight, str) and raw_weight.strip().isdigit():
+        return max(1, min(100, int(raw_weight.strip())))
+    if isinstance(raw_priority, str) and raw_priority.strip():
+        p_clean = raw_priority.strip().lower()
+        if p_clean in _PRIORITY_WEIGHT_MAP:
+            return _PRIORITY_WEIGHT_MAP[p_clean]
+    return 50
+
+
+def _normalize_agenda_item(raw: Dict[str, Any], index: int, *, default_deadline: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    title = str(raw.get("title") or raw.get("text") or raw.get("name") or "").strip()
+    if not title:
+        return None
+    raw_prio = raw.get("priority")
+    weight = _normalize_agenda_weight(raw.get("weight"), raw_prio)
+    priority = str(raw_prio).strip() if raw_prio not in (None, "") else _weight_to_priority(weight)
+    status = str(raw.get("status") or "pending").strip().lower() or "pending"
+    raw_progress = raw.get("progress")
+    if isinstance(raw_progress, (int, float)) and not isinstance(raw_progress, bool):
+        progress = max(0, min(100, int(round(raw_progress))))
+    elif status in _AGENDA_DONE_STATUSES:
+        progress = 100
+    elif status == "in_progress":
+        progress = 50
+    else:
+        progress = 0
+    timeframe = raw.get("timeframe")
+    deadline_val = raw.get("deadline") or raw.get("due_date") or raw.get("target_date") or timeframe or default_deadline
+    deadline_str = str(deadline_val).strip() if deadline_val not in (None, "") else None
+    horizon = _infer_agenda_horizon(raw.get("horizon"), timeframe, deadline_str, weight)
+    category = str(raw.get("category") or "agenda").strip() or "agenda"
+    item_id = str(raw.get("id") or f"A{index}").strip()
+    return {
+        "id": item_id,
+        "title": title,
+        "weight": weight,
+        "priority": priority,
+        "horizon": horizon,
+        "status": status,
+        "progress": progress,
+        "category": category,
+        "deadline": deadline_str,
+    }
+
+
+def _load_agenda_from_json() -> Optional[Dict[str, Any]]:
+    for cand in _agenda_file_candidates():
+        if not _is_usable_local_file(cand, max_bytes=2_000_000):
+            continue
+        try:
+            payload = json.loads(cand.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            continue
+        raw_items: Optional[List[Any]] = None
+        updated_at: Optional[str] = None
+        default_deadline: Optional[str] = None
+        if isinstance(payload, dict):
+            if isinstance(payload.get("items"), list):
+                raw_items = payload["items"]
+            if payload.get("updated_at") not in (None, ""):
+                updated_at = str(payload["updated_at"])
+            if payload.get("deadline") not in (None, ""):
+                default_deadline = str(payload["deadline"])
+        elif isinstance(payload, list):
+            raw_items = payload
+        if raw_items is None:
+            continue
+        if updated_at is None:
+            try:
+                updated_at = datetime.fromtimestamp(cand.stat().st_mtime, tz=timezone.utc).isoformat()
+            except OSError:
+                updated_at = None
+        items: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(raw_items, start=1):
+            if not isinstance(entry, dict):
+                continue
+            normalized = _normalize_agenda_item(entry, idx, default_deadline=default_deadline)
+            if normalized is not None:
+                items.append(normalized)
+        return {"available": True, "source": "agenda_json", "updated_at": updated_at, "items": items}
+    return None
+
+
+def _load_agenda_from_bach_db() -> Dict[str, Any]:
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    items: List[Dict[str, Any]] = []
+    timestamps: List[str] = []
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "selfmgmt_career_goals" in tables:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(selfmgmt_career_goals)").fetchall()}
+            order_col = "target_date IS NULL, target_date ASC, id ASC" if "target_date" in cols else "id ASC"
+            for raw in conn.execute(f"SELECT * FROM selfmgmt_career_goals ORDER BY {order_col}").fetchall():
+                row = dict(raw)
+                st = str(row.get("status") or "active").strip().lower()
+                if st in _AGENDA_DONE_STATUSES or st in {"cancelled", "archived"}:
+                    continue
+                norm = _normalize_agenda_item(
+                    {
+                        "id": f"goal_{row.get('id')}",
+                        "title": row.get("title"),
+                        "weight": row.get("weight", 80),
+                        "priority": row.get("priority") or "P2",
+                        "horizon": row.get("horizon"),
+                        "status": st,
+                        "progress": row.get("progress"),
+                        "category": row.get("category") or "ziele",
+                        "deadline": row.get("target_date"),
+                    },
+                    len(items) + 1,
+                )
+                if norm is not None:
+                    items.append(norm)
+                for ts_col in ("updated_at", "created_at"):
+                    if row.get(ts_col):
+                        timestamps.append(str(row[ts_col]))
+
+        if "tasks" in tables:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+            for raw in conn.execute("SELECT * FROM tasks ORDER BY id ASC LIMIT 200").fetchall():
+                row = dict(raw)
+                st = str(row.get("status") or "pending").strip().lower()
+                if st not in {"pending", "open", "in_progress"}:
+                    continue
+                norm = _normalize_agenda_item(
+                    {
+                        "id": f"task_{row.get('id')}",
+                        "title": row.get("title"),
+                        "weight": row.get("weight"),
+                        "priority": row.get("priority") or "P3",
+                        "horizon": row.get("horizon"),
+                        "status": st,
+                        "progress": row.get("progress"),
+                        "category": row.get("category") or "tasks",
+                        "deadline": row.get("due_date") if "due_date" in cols else None,
+                    },
+                    len(items) + 1,
+                )
+                if norm is not None:
+                    items.append(norm)
+                for ts_col in ("updated_at", "created_at"):
+                    if row.get(ts_col):
+                        timestamps.append(str(row[ts_col]))
+    except sqlite3.Error:
+        pass
+    finally:
+        conn.close()
+
+    if not items:
+        return {"available": False, "source": "empty", "updated_at": None, "items": []}
+    latest_ts = max(timestamps) if timestamps else None
+    return {"available": True, "source": "bach_tasks", "updated_at": latest_ts, "items": items}
+
+
+def _resolve_agenda_payload(horizon: str) -> Dict[str, Any]:
+    horizon_norm = (horizon or "all").strip().lower()
+    if horizon_norm not in {"all", "short", "mid", "long"}:
+        raise HTTPException(status_code=400, detail="Erlaubte Horizonte: all, short, mid, long")
+
+    loaded = _load_agenda_from_json()
+    if loaded is None:
+        loaded = _load_agenda_from_bach_db()
+
+    items = list(loaded["items"])
+    if horizon_norm != "all":
+        items = [it for it in items if it.get("horizon") == horizon_norm]
+
+    items.sort(
+        key=lambda it: (
+            1 if str(it.get("status") or "").lower() in _AGENDA_DONE_STATUSES else 0,
+            -int(it.get("weight") or 50),
+            str(it.get("deadline") or "9999-12-31"),
+            str(it.get("id") or ""),
+        )
+    )
+    return {
+        "available": bool(loaded["available"]),
+        "source": loaded["source"],
+        "updated_at": loaded["updated_at"],
+        "horizons": list(_AGENDA_HORIZONS),
+        "items": items,
+        "count": len(items),
+    }
+
+
+@router.get("/agenda")
+async def get_agenda(
+    horizon: Annotated[str, Query(description="all|short|mid|long")] = "all",
+):
+    """Liefert die gemeinsame Agenda (agenda.json oder offene BACH-Ziele/-Tasks) nach Horizonten."""
+    return await asyncio.to_thread(_resolve_agenda_payload, horizon)
+
+
+@router.get("/agenda/export")
+async def export_agenda(
+    format: Annotated[str, Query(description="pdf|html|md|txt")] = "md",
+    horizon: Annotated[str, Query(description="all|short|mid|long")] = "all",
+):
+    """Exportiert die gefilterte Agenda als PDF, XSS-sicheres HTML, Markdown oder Klartext."""
+    from html import escape as html_escape
+
+    fmt = (format or "md").strip().lower()
+    if fmt not in {"pdf", "html", "md", "txt"}:
+        raise HTTPException(status_code=400, detail="Erlaubte Exportformate: pdf, html, md, txt")
+
+    data = await asyncio.to_thread(_resolve_agenda_payload, horizon)
+    items = data["items"]
+    horizon_norm = (horizon or "all").strip().lower()
+    heading = f"OCEAN Agenda ({horizon_norm}, Quelle: {data['source']})"
+
+    if fmt == "pdf":
+        from .pdf_export import render_agenda_pdf
+
+        pdf_bytes = render_agenda_pdf(
+            title=heading,
+            horizon=horizon_norm,
+            source=str(data["source"]),
+            updated_at=data["updated_at"],
+            items=items,
+        )
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="agenda-export.pdf"'},
+        )
+
+    if fmt == "md":
+        lines = [
+            f"# {heading}",
+            "",
+            f"Verfügbar: **{'ja' if data['available'] else 'nein'}** | Anzahl: **{len(items)}**"
+            + (f" | Stand: `{data['updated_at']}`" if data["updated_at"] else ""),
+            "",
+        ]
+        if not items:
+            lines.append("_Keine Agenda-Punkte im gewählten Horizont._")
+        else:
+            lines.append("| ID | Horizont | Prio (Gewicht) | Fortschritt | Status | Kategorie | Frist | Titel |")
+            lines.append("|---|---|---|---|---|---|---|---|")
+            for it in items:
+                lines.append(
+                    f"| `{it['id']}` | `{it['horizon']}` | {it['priority']} ({it['weight']}) | "
+                    f"{it['progress']}% | `{it['status']}` | {it['category']} | "
+                    f"{it['deadline'] or '-'} | {it['title'].replace('|', '/')} |"
+                )
+        return Response(
+            content="\n".join(lines) + "\n",
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="agenda-export.md"'},
+        )
+
+    if fmt == "txt":
+        lines = [
+            heading,
+            "=" * len(heading),
+            f"Verfügbar: {'ja' if data['available'] else 'nein'} | Anzahl: {len(items)}"
+            + (f" | Stand: {data['updated_at']}" if data["updated_at"] else ""),
+            "",
+        ]
+        if not items:
+            lines.append("Keine Agenda-Punkte im gewählten Horizont.")
+        else:
+            for it in items:
+                mark = "x" if it["status"] in _AGENDA_DONE_STATUSES else " "
+                dl = f" | Frist: {it['deadline']}" if it.get("deadline") else ""
+                lines.append(
+                    f"[{mark}] {it['id']} ({it['horizon']}, {it['priority']}/w={it['weight']}, "
+                    f"{it['progress']}%, {it['category']}{dl}) {it['title']}"
+                )
+        return Response(
+            content="\n".join(lines) + "\n",
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="agenda-export.txt"'},
+        )
+
+    esc = html_escape
+    rows_html = "".join(
+        f"<tr><td><code>{esc(str(it['id']))}</code></td>"
+        f"<td><span class='hz hz-{esc(str(it['horizon']))}'>{esc(str(it['horizon']))}</span></td>"
+        f"<td>{esc(str(it['priority']))} ({int(it['weight'])})</td>"
+        f"<td>{int(it['progress'])}%</td>"
+        f"<td>{esc(str(it['status']))}</td>"
+        f"<td>{esc(str(it['category']))}</td>"
+        f"<td>{esc(str(it['deadline'] or '-'))}</td>"
+        f"<td><strong>{esc(str(it['title']))}</strong></td></tr>"
+        for it in items
+    ) or "<tr><td colspan='8'>Keine Agenda-Punkte im gewählten Horizont.</td></tr>"
+    updated_block = f" | Stand: <code>{esc(str(data['updated_at']))}</code>" if data["updated_at"] else ""
+    html_doc = (
+        "<!doctype html><html lang='de'><head><meta charset='utf-8'>"
+        f"<title>{esc(heading)}</title>"
+        "<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#0f172a;}"
+        "h1{font-size:1.3rem;}table{width:100%;border-collapse:collapse;margin-top:1rem;}"
+        "th,td{border:1px solid #cbd5e1;padding:0.5rem;text-align:left;font-size:0.88rem;}"
+        "th{background:#f1f5f9;}.hz{display:inline-block;padding:0.1rem 0.45rem;border-radius:999px;font-size:0.76rem;background:#e0f2fe;color:#0369a1;}"
+        "@media print{body{margin:0.5rem;}}</style></head><body>"
+        f"<h1>{esc(heading)}</h1>"
+        f"<p>Punkte: <strong>{len(items)}</strong> | Quelle: <code>{esc(str(data['source']))}</code>{updated_block}</p>"
+        "<table><thead><tr><th>ID</th><th>Horizont</th><th>Prio</th><th>Fortschritt</th>"
+        "<th>Status</th><th>Kategorie</th><th>Frist</th><th>Titel</th></tr></thead>"
+        f"<tbody>{rows_html}</tbody></table></body></html>"
+    )
+    return Response(
+        content=html_doc,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="agenda-export.html"'},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
