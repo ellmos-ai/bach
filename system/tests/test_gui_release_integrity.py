@@ -5,8 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from hub._services.gui_contract_service import DIST_SCHEMA, KIT_SCHEMA, get_pinned_kit_manifest, verify_installed_dist
 from gui.api.gui_capabilities import declaration
+from hub._services.gui_contract_service import (
+    DIST_SCHEMA,
+    KIT_SCHEMA,
+    get_pinned_kit_manifest,
+    verify_installed_dist,
+)
 
 
 def dist(tmp_path, **changes):
@@ -96,15 +101,15 @@ def test_gui_consumer_and_kit_pin_bind_same_029_release():
     assert consumer["version"] == "0.2.42"
     assert consumer["source"] == {
         "repository": "ellmos-ai/ellmos-system-gui",
-        "commit": "f0440a031425d0e58c72609b503b6160651f2d64",
-        "archive_sha256": "b4b6921365de28d0280220963da43c98443e78e1dc213212e08b645ba0744338",
+        "commit": "7abe3a91dbdbf7265d1a679e8fb7eae577065f3d",
+        "archive_sha256": "27a6be58bc2480a06c6143883e90b8c2f24cdc1cc9a18d221541664f2fe50dda",
         "dist_manifest_schema": "ellmos-system-gui.dist.v1",
     }
     assert kit["verified"] is True  # Identity metadata only; installed bytes are verified separately.
     assert kit["version"] == consumer["version"]
     assert kit["pinned_source_commit"] == consumer["source"]["commit"]
     assert kit["release_archive_sha256"] == consumer["source"]["archive_sha256"]
-    assert kit["release_archive"] == "ellmos-system-gui-0.2.42-f0440a031425.zip"
+    assert kit["release_archive"] == "ellmos-system-gui-0.2.42-7abe3a91dbdb.zip"
     assert kit["dist_manifest_schema"] == "ellmos-system-gui.dist.v1"
     assert kit["expected_page_count"] == 52
     assert "installed" not in kit
