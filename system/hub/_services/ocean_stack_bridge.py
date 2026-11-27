@@ -334,6 +334,12 @@ def load_agent_library_module() -> Any:
     )
 
 
+def get_ocean_automation_lifecycle_registry(db_path: str | Path | None = None) -> Any:
+    """Erzeugt eine persistente Ocean-AutomationLifecycleRegistry (#2329)."""
+    mod = load_agent_library_module()
+    return mod.AutomationLifecycleRegistry(db_path=db_path)
+
+
 def load_capability_views_module() -> Any:
     return _load_module_from_repo(
         "ocean_capability_views",
