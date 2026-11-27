@@ -7057,7 +7057,7 @@ def _start_reserved_worker_execution(control, w, custom_prompt):
                                               reason=("no_credit" if _worker_no_credit(detail)
                                                       else "temporary_gateway_timeout"
                                                       if detail and detail.get("provider") == "openrouter"
-                                                      and detail.get("status_code") == 504
+                                                      and detail.get("status_code") in {502, 503, 504}
                                                       else "temporary_connection_error"
                                                       if (detail and detail.get("provider") == "openrouter"
                                                           and detail.get("kind") == "connection_error")

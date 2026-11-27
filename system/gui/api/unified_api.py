@@ -3361,6 +3361,19 @@ async def get_ocean_module_map():
 # 9. KALENDER & TERMINE (ASSISTANT_CALENDAR & HOUSEHOLD_ROUTINES)
 # ═══════════════════════════════════════════════════════════════
 
+_CALENDAR_DEFAULT_PROFILES: List[Dict[str, str]] = [
+    {"id": "user", "name": "Nutzer", "color": "#38bdf8", "category": "persoenlich"},
+    {"id": "tickets", "name": "Tickets", "color": "#f59e0b", "category": "arbeit"},
+    {"id": "finanzen", "name": "Finanzen", "color": "#10b981", "category": "finanzen"},
+    {"id": "gesundheit", "name": "Gesundheit", "color": "#f43f5e", "category": "gesundheit"},
+    {"id": "geburtstage_privat", "name": "Geburtstage (privat)", "color": "#a855f7", "category": "privat"},
+    {"id": "geburtstage_beruflich", "name": "Geburtstage (beruflich)", "color": "#6366f1", "category": "arbeit"},
+    {"id": "terminpilot", "name": "TerminPilot", "color": "#14b8a6", "category": "abstimmung"},
+    {"id": "routinen", "name": "Routinen", "color": "#94a3b8", "category": "routinen"},
+]
+_VALID_CALENDAR_SILO_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
+
+
 def _ensure_calendar_tables(conn: sqlite3.Connection):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS assistant_calendar (
@@ -3380,9 +3393,22 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
             created_at TEXT,
             updated_at TEXT,
             dist_type TEXT,
-            event_origin TEXT NOT NULL DEFAULT 'unknown'
+            event_origin TEXT NOT NULL DEFAULT 'unknown',
+            calendar_id TEXT NOT NULL DEFAULT 'user',
+            source_calendar_id TEXT,
+            source_event_id INTEGER,
+            link_mode TEXT
         )
     """)
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)").fetchall()}
+    for col_name, col_def in (
+        ("calendar_id", "TEXT NOT NULL DEFAULT 'user'"),
+        ("source_calendar_id", "TEXT"),
+        ("source_event_id", "INTEGER"),
+        ("link_mode", "TEXT"),
+    ):
+        if col_name not in existing_cols:
+            conn.execute(f"ALTER TABLE assistant_calendar ADD COLUMN {col_name} {col_def}")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS household_routines (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3396,21 +3422,213 @@ def _ensure_calendar_tables(conn: sqlite3.Connection):
     conn.commit()
 
 
+def _parse_calendar_filter(calendars: Optional[str]) -> Optional[set[str]]:
+    if not calendars or calendars.strip().lower() in {"", "all", "*"}:
+        return None
+    parts = {p.strip().lower() for p in calendars.split(",") if p.strip()}
+    return parts or None
+
+
+def _matches_calendar_date(dt_str: Optional[str], view: str, date_str: Optional[str]) -> bool:
+    if not date_str or not dt_str:
+        return True
+    s = str(dt_str).strip()
+    if view == "day":
+        return s.startswith(date_str[:10])
+    if view == "month" and len(date_str) >= 7:
+        return s.startswith(date_str[:7])
+    if view == "year" and len(date_str) >= 4:
+        return s.startswith(date_str[:4])
+    if view == "week":
+        try:
+            selected = datetime.strptime(date_str[:10], "%Y-%m-%d")
+            monday = selected - timedelta(days=selected.weekday())
+            next_monday = monday + timedelta(days=7)
+            candidate = datetime.strptime(s[:10], "%Y-%m-%d")
+            return monday <= candidate < next_monday
+        except ValueError:
+            return True
+    return True
+
+
+def _collect_readthrough_calendar_events(
+    conn: sqlite3.Connection,
+    *,
+    view: str,
+    date_str: Optional[str],
+    include_routines: bool,
+    silo_filter: Optional[set[str]],
+) -> List[Dict[str, Any]]:
+    """Read-through domain calendar entries without duplicating source tables."""
+    extra: List[Dict[str, Any]] = []
+    if include_routines and (silo_filter is None or "routinen" in silo_filter):
+        try:
+            r_rows = conn.execute(
+                "SELECT id, name, frequency, category, next_due FROM household_routines "
+                "WHERE is_active = 1 AND next_due IS NOT NULL AND TRIM(next_due) != ''"
+            ).fetchall()
+            for r in r_rows:
+                if not _matches_calendar_date(r["next_due"], view, date_str):
+                    continue
+                extra.append({
+                    "id": f"routine_{r['id']}",
+                    "title": r["name"],
+                    "event_type": "routine",
+                    "calendar_id": "routinen",
+                    "start_datetime": r["next_due"],
+                    "end_datetime": None,
+                    "location": r["category"],
+                    "description": f"Lebensroutine: {r['frequency']} ({r['category']})",
+                    "status": "aktiv",
+                    "is_recurring": 1,
+                    "recurrence_rule": r["frequency"],
+                    "is_routine": True,
+                    "read_through": True,
+                    "origin": "system",
+                })
+        except Exception:
+            pass
+
+    if silo_filter is None or "finanzen" in silo_filter:
+        try:
+            f_rows = conn.execute(
+                "SELECT id, provider_name, betrag_monatlich, zahlungsintervall, naechste_zahlung "
+                "FROM financial_subscriptions WHERE aktiv = 1 AND naechste_zahlung IS NOT NULL AND TRIM(naechste_zahlung) != ''"
+            ).fetchall()
+            for r in f_rows:
+                if not _matches_calendar_date(r["naechste_zahlung"], view, date_str):
+                    continue
+                amt = f" ({r['betrag_monatlich']:.2f} €)" if isinstance(r["betrag_monatlich"], (int, float)) else ""
+                extra.append({
+                    "id": f"fin_{r['id']}",
+                    "title": f"Zahlung: {r['provider_name']}{amt}",
+                    "event_type": "finanzen",
+                    "calendar_id": "finanzen",
+                    "start_datetime": r["naechste_zahlung"],
+                    "end_datetime": None,
+                    "location": r["zahlungsintervall"] or "",
+                    "description": "Automatischer Read-Through aus financial_subscriptions",
+                    "status": "geplant",
+                    "read_through": True,
+                    "origin": "system",
+                })
+        except Exception:
+            pass
+
+    if silo_filter is None or "gesundheit" in silo_filter:
+        try:
+            h_rows = conn.execute(
+                "SELECT id, title, appointment_date, doctor_name, location, notes FROM health_appointments "
+                "WHERE appointment_date IS NOT NULL AND TRIM(appointment_date) != ''"
+            ).fetchall()
+            for r in h_rows:
+                if not _matches_calendar_date(r["appointment_date"], view, date_str):
+                    continue
+                extra.append({
+                    "id": f"health_{r['id']}",
+                    "title": r["title"] or r["doctor_name"] or "Arzttermin",
+                    "event_type": "gesundheit",
+                    "calendar_id": "gesundheit",
+                    "start_datetime": r["appointment_date"],
+                    "end_datetime": None,
+                    "location": r["location"] or r["doctor_name"] or "",
+                    "description": r["notes"] or "",
+                    "status": "geplant",
+                    "read_through": True,
+                    "origin": "user",
+                })
+        except Exception:
+            pass
+
+    if silo_filter is None or "geburtstage_privat" in silo_filter or "geburtstage_beruflich" in silo_filter:
+        try:
+            c_rows = conn.execute(
+                "SELECT id, name, birthday, category FROM assistant_contacts "
+                "WHERE birthday IS NOT NULL AND TRIM(birthday) != ''"
+            ).fetchall()
+            target_year = int(date_str[:4]) if date_str and len(date_str) >= 4 and date_str[:4].isdigit() else datetime.now().year
+            for r in c_rows:
+                bday = str(r["birthday"]).strip()
+                md = bday[5:10] if len(bday) >= 10 and bday[4] == "-" else None
+                if not md:
+                    continue
+                occ = f"{target_year:04d}-{md} 09:00:00"
+                cat = str(r["category"] or "").lower()
+                silo = "geburtstage_beruflich" if any(k in cat for k in ("arbeit", "beruf", "work", "business", "kunde")) else "geburtstage_privat"
+                if silo_filter is not None and silo not in silo_filter:
+                    continue
+                if not _matches_calendar_date(occ, view, date_str):
+                    continue
+                extra.append({
+                    "id": f"bday_{r['id']}",
+                    "title": f"Geburtstag: {r['name']}",
+                    "event_type": "geburtstag",
+                    "calendar_id": silo,
+                    "start_datetime": occ,
+                    "end_datetime": None,
+                    "location": "",
+                    "description": f"Geburtstag aus Kontakten ({bday})",
+                    "status": "geplant",
+                    "is_recurring": 1,
+                    "recurrence_rule": "jaehrlich",
+                    "read_through": True,
+                    "origin": "user",
+                })
+        except Exception:
+            pass
+    return extra
+
+
+@router.get("/calendar/profiles")
+async def get_calendar_profiles():
+    """Liefert die konfigurierten Kalender-Silos/-Profile inkl. Live-Terminzählung (PB-12)."""
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        counts: Dict[str, int] = {p["id"]: 0 for p in _CALENDAR_DEFAULT_PROFILES}
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(assistant_calendar)").fetchall()}
+            if "calendar_id" in cols:
+                for row in conn.execute("SELECT COALESCE(NULLIF(TRIM(calendar_id), ''), 'user') AS cid, COUNT(*) AS cnt FROM assistant_calendar GROUP BY cid").fetchall():
+                    counts[str(row["cid"])] = counts.get(str(row["cid"]), 0) + int(row["cnt"])
+            else:
+                cnt = conn.execute("SELECT COUNT(*) FROM assistant_calendar").fetchone()[0]
+                counts["user"] += int(cnt)
+        except Exception:
+            pass
+        for ev in _collect_readthrough_calendar_events(conn, view="list", date_str=None, include_routines=True, silo_filter=None):
+            cid = str(ev.get("calendar_id") or "user")
+            counts[cid] = counts.get(cid, 0) + 1
+
+        profiles = [
+            {**p, "count": counts.get(p["id"], 0)}
+            for p in _CALENDAR_DEFAULT_PROFILES
+        ]
+        known_ids = {p["id"] for p in _CALENDAR_DEFAULT_PROFILES}
+        for custom_id, cnt in sorted(counts.items()):
+            if custom_id not in known_ids and cnt > 0:
+                profiles.append({"id": custom_id, "name": custom_id, "color": "#64748b", "category": "custom", "count": cnt})
+        return {"schema": "bach.calendar-profiles.v1", "profiles": profiles, "total_events": sum(counts.values())}
+    finally:
+        conn.close()
+
+
 @router.get("/calendar/events")
 async def get_calendar_events(
     view: str = Query("month", description="day|week|month|year|list"),
     date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
     include_routines: bool = Query(True, description="Fällige Haushalts-/Lebensroutinen einblenden"),
-    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown")
+    origin: Optional[str] = Query("all", description="all|system|user|without_system|unknown"),
+    calendars: Optional[str] = Query("all", description="all oder kommaseparierte Kalender-Silos"),
 ):
-    """Liefert Termine aus assistant_calendar und optionale fällige Routinen."""
+    """Liefert Termine aus assistant_calendar und Read-Through-Silos (Routinen, Finanzen, Gesundheit, Geburtstage)."""
     conn = _get_conn()
     conn.row_factory = sqlite3.Row
+    silo_filter = _parse_calendar_filter(calendars)
     try:
-        # Legacy databases may lack event_origin. Reading never migrates them.
-        # Distribution type is not evidence of a user's or system's authorship.
+        # Legacy databases may lack event_origin / calendar_id. Reading never migrates them.
         query = "SELECT * FROM assistant_calendar WHERE 1=1"
-        params = []
+        params: List[Any] = []
 
         if date:
             if view == "day":
@@ -3441,32 +3659,24 @@ async def get_calendar_events(
             if "no such table: assistant_calendar" not in str(exc):
                 raise
             rows = []
-        events = []
+        events: List[Dict[str, Any]] = []
         for row in rows:
             event = dict(row)
             event["origin"] = event.get("event_origin") if event.get("event_origin") in {"user", "system"} else "unknown"
+            event["calendar_id"] = str(event.get("calendar_id") or "user").strip() or "user"
+            if silo_filter is not None and event["calendar_id"].lower() not in silo_filter:
+                continue
             events.append(event)
 
-        if include_routines:
-            try:
-                r_rows = conn.execute("SELECT id, name, frequency, category, next_due FROM household_routines WHERE is_active = 1 AND next_due IS NOT NULL AND TRIM(next_due) != ''").fetchall()
-                for r in r_rows:
-                    events.append({
-                        "id": f"routine_{r['id']}",
-                        "title": r["name"],
-                        "event_type": "routine",
-                        "start_datetime": r["next_due"],
-                        "end_datetime": None,
-                        "location": r["category"],
-                        "description": f"Lebensroutine: {r['frequency']} ({r['category']})",
-                        "status": "aktiv",
-                        "is_recurring": 1,
-                        "recurrence_rule": r["frequency"],
-                        "is_routine": True,
-                        "origin": "unknown",
-                    })
-            except Exception:
-                pass
+        events.extend(
+            _collect_readthrough_calendar_events(
+                conn,
+                view=view,
+                date_str=date,
+                include_routines=include_routines,
+                silo_filter=silo_filter,
+            )
+        )
 
         if origin and origin != "all":
             if origin == "system":
@@ -3478,14 +3688,15 @@ async def get_calendar_events(
             elif origin == "unknown":
                 events = [e for e in events if e.get("origin") == "unknown"]
 
-        return {"events": events, "count": len(events), "view": view, "date": date, "origin": origin}
+        events.sort(key=lambda e: str(e.get("start_datetime") or ""))
+        return {"events": events, "count": len(events), "view": view, "date": date, "origin": origin, "calendars": calendars}
     finally:
         conn.close()
 
 
 @router.post("/calendar/events")
 async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
-    """Erstellt einen neuen Kalender-Termin in assistant_calendar."""
+    """Erstellt einen neuen Kalender-Termin in assistant_calendar (inkl. optionalem calendar_id-Silo)."""
     title = payload.get("title", "").strip()
     if not title:
         raise HTTPException(status_code=400, detail="Titel erforderlich")
@@ -3494,6 +3705,9 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
         start_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     end_dt = payload.get("end_datetime") or payload.get("end")
     event_type = payload.get("event_type", "termin")
+    calendar_id = str(payload.get("calendar_id") or "user").strip().lower()
+    if not _VALID_CALENDAR_SILO_RE.fullmatch(calendar_id):
+        raise HTTPException(status_code=400, detail="Ungültiges Kalender-Silo")
     location = payload.get("location", "")
     description = payload.get("description", "")
     status = payload.get("status", "geplant")
@@ -3513,14 +3727,142 @@ async def create_calendar_event(payload: Dict[str, Any] = Body(...)):
             INSERT INTO assistant_calendar (
                 title, event_type, start_datetime, end_datetime, location,
                 description, status, reminder_minutes, is_recurring,
-                recurrence_rule, created_at, updated_at, event_origin
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now, "user"))
+                recurrence_rule, created_at, updated_at, event_origin, calendar_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (title, event_type, start_dt, end_dt, location, description, status, reminder, is_recurring, recurrence_rule, now, now, "user", calendar_id))
         new_id = cursor.lastrowid
         conn.commit()
-        return {"ok": True, "id": new_id, "title": title}
+        return {"ok": True, "id": new_id, "title": title, "calendar_id": calendar_id}
     finally:
         conn.close()
+
+
+@router.post("/calendar/events/{event_id}/{action}")
+async def calendar_event_silo_action(event_id: int, action: str, payload: Dict[str, Any] = Body(...)):
+    """Silo-Operation auf einem bestehenden Termin: mirror, transfer oder clone (T-20261127-860979068)."""
+    if action not in {"mirror", "transfer", "clone"}:
+        raise HTTPException(status_code=400, detail="Erlaubte Aktionen: mirror, transfer, clone")
+    target_cal = str(payload.get("target_calendar_id") or payload.get("to") or "").strip().lower()
+    if not _VALID_CALENDAR_SILO_RE.fullmatch(target_cal):
+        raise HTTPException(status_code=400, detail="Ungültiges Ziel-Kalender-Silo")
+
+    conn = _get_conn()
+    conn.row_factory = sqlite3.Row
+    try:
+        _ensure_calendar_tables(conn)
+        src = conn.execute("SELECT * FROM assistant_calendar WHERE id = ?", (event_id,)).fetchone()
+        if not src:
+            raise HTTPException(status_code=404, detail="Termin nicht gefunden")
+        src_dict = dict(src)
+        src_cal = str(src_dict.get("calendar_id") or "user")
+        now = datetime.now().isoformat()
+        if action == "transfer":
+            conn.execute(
+                "UPDATE assistant_calendar SET calendar_id = ?, source_calendar_id = ?, link_mode = 'transfer', updated_at = ? WHERE id = ?",
+                (target_cal, src_cal, now, event_id),
+            )
+            conn.commit()
+            return {"ok": True, "action": "transfer", "id": event_id, "source_calendar_id": src_cal, "calendar_id": target_cal}
+
+        cur = conn.execute(
+            """
+            INSERT INTO assistant_calendar (
+                title, event_type, start_datetime, end_datetime, location,
+                description, attendees, status, reminder_minutes, is_recurring,
+                recurrence_rule, external_id, created_at, updated_at, event_origin,
+                calendar_id, source_calendar_id, source_event_id, link_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                src_dict["title"], src_dict["event_type"], src_dict["start_datetime"], src_dict["end_datetime"],
+                src_dict["location"], src_dict["description"], src_dict.get("attendees"), src_dict["status"],
+                src_dict["reminder_minutes"], src_dict["is_recurring"], src_dict["recurrence_rule"],
+                src_dict.get("external_id"), now, now, src_dict.get("event_origin") or "user",
+                target_cal, src_cal, event_id if action == "mirror" else None, action,
+            ),
+        )
+        new_id = cur.lastrowid
+        conn.commit()
+        return {"ok": True, "action": action, "id": new_id, "source_event_id": event_id, "source_calendar_id": src_cal, "calendar_id": target_cal}
+    finally:
+        conn.close()
+
+
+@router.get("/calendar/export")
+async def export_calendar_report(
+    view: str = Query("month", description="day|week|month|year|list"),
+    date: Optional[str] = Query(None, description="ISO-Datum YYYY-MM-DD"),
+    calendars: Optional[str] = Query("all", description="all oder kommaseparierte Silos"),
+    format: str = Query("html", description="html|md|txt|ics"),
+):
+    """Exportiert den gewählten Kalender-Ausschnitt als druckreifes HTML-Blatt, Markdown, Text oder ICS."""
+    from html import escape as html_escape
+    from fastapi.responses import Response
+
+    fmt = format.strip().lower()
+    if fmt not in {"html", "md", "txt", "ics"}:
+        raise HTTPException(status_code=400, detail="Erlaubte Exportformate: html, md, txt, ics")
+
+    data = await get_calendar_events(view=view, date=date, include_routines=True, origin="all", calendars=calendars)
+    events = data.get("events", [])
+    heading = f"OCEAN Kalender-Auszug ({view}, {date or 'alle'}, Silos: {calendars or 'all'})"
+
+    if fmt == "md":
+        lines = [f"# {heading}", "", f"Anzahl Termine: **{len(events)}**", ""]
+        if not events:
+            lines.append("_Keine Termine im gewählten Zeitraum._")
+        else:
+            lines.append("| Datum / Zeit | Silo | Titel | Ort |")
+            lines.append("|---|---|---|---|")
+            for ev in events:
+                lines.append(f"| {ev.get('start_datetime') or ''} | `{ev.get('calendar_id') or 'user'}` | {ev.get('title') or ''} | {ev.get('location') or ''} |")
+        return Response(content="\n".join(lines) + "\n", media_type="text/markdown; charset=utf-8")
+
+    if fmt == "txt":
+        lines = [heading, "=" * len(heading), f"Anzahl Termine: {len(events)}", ""]
+        for ev in events:
+            lines.append(f"- [{ev.get('calendar_id') or 'user'}] {ev.get('start_datetime') or ''} | {ev.get('title') or ''}" + (f" ({ev['location']})" if ev.get("location") else ""))
+        if not events:
+            lines.append("Keine Termine im gewählten Zeitraum.")
+        return Response(content="\n".join(lines) + "\n", media_type="text/plain; charset=utf-8")
+
+    if fmt == "ics":
+        ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ELLMOS OCEAN//Calendar Export//DE"]
+        for idx, ev in enumerate(events, 1):
+            raw_dt = str(ev.get("start_datetime") or "").replace("-", "").replace(":", "").replace(" ", "T")
+            dtstart = raw_dt[:15] if len(raw_dt) >= 15 else (raw_dt[:8] + "T090000" if len(raw_dt) >= 8 else "20260101T090000")
+            summary = str(ev.get("title") or "Termin").replace("\n", " ").replace(",", "\\,")
+            cal_silo = str(ev.get("calendar_id") or "user")
+            ics.extend([
+                "BEGIN:VEVENT",
+                f"UID:ocean-{ev.get('id', idx)}@ellmos.local",
+                f"DTSTART:{dtstart}",
+                f"SUMMARY:{summary}",
+                f"CATEGORIES:{cal_silo}",
+                "END:VEVENT",
+            ])
+        ics.append("END:VCALENDAR")
+        return Response(content="\r\n".join(ics) + "\r\n", media_type="text/calendar; charset=utf-8")
+
+    rows_html = "".join(
+        f"<tr><td>{html_escape(str(ev.get('start_datetime') or ''))}</td>"
+        f"<td><span class='silo'>{html_escape(str(ev.get('calendar_id') or 'user'))}</span></td>"
+        f"<td><strong>{html_escape(str(ev.get('title') or ''))}</strong></td>"
+        f"<td>{html_escape(str(ev.get('location') or ''))}</td></tr>"
+        for ev in events
+    ) or "<tr><td colspan='4'>Keine Termine im gewählten Zeitraum.</td></tr>"
+    html_doc = (
+        "<!doctype html><html lang='de'><head><meta charset='utf-8'>"
+        f"<title>{html_escape(heading)}</title>"
+        "<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#0f172a;}h1{font-size:1.3rem;}"
+        "table{width:100%;border-collapse:collapse;margin-top:1rem;}th,td{border:1px solid #cbd5e1;padding:0.5rem;text-align:left;font-size:0.9rem;}"
+        "th{background:#f1f5f9;}.silo{display:inline-block;padding:0.1rem 0.45rem;border-radius:999px;background:#e0f2fe;color:#0369a1;font-size:0.78rem;}"
+        "@media print{body{margin:0.5rem;}}</style></head><body>"
+        f"<h1>{html_escape(heading)}</h1><p>Termine gesamt: <strong>{len(events)}</strong></p>"
+        f"<table><thead><tr><th>Datum / Zeit</th><th>Silo</th><th>Titel</th><th>Ort</th></tr></thead><tbody>{rows_html}</tbody></table>"
+        "</body></html>"
+    )
+    return Response(content=html_doc, media_type="text/html; charset=utf-8")
 
 
 @router.delete("/calendar/events/{event_id}")
@@ -4254,6 +4596,95 @@ async def get_governance_decision_rules():
         }
 
     return await asyncio.to_thread(_load)
+
+
+_HELP_LANGS = ("de", "en", "es", "ja", "ru", "zh")
+_HELP_TOPIC_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
+
+
+def _help_docs_dir() -> Path:
+    return _SYSTEM_ROOT / "docs" / "help"
+
+
+@router.get("/help/topics")
+async def get_help_topics(
+    q: Optional[str] = Query(None, description="Suchbegriff in Thema oder Zusammenfassung"),
+    lang: str = Query("de", description="de|en|es|ja|ru|zh"),
+    limit: int = Query(60, ge=1, le=250),
+):
+    """Durchsuchbarer Live-Index der lokalen BACH-Hilfetexte (`system/docs/help/*.txt`, PB-17)."""
+    norm_lang = lang.strip().lower()
+    if norm_lang not in _HELP_LANGS:
+        norm_lang = "de"
+    needle = (q or "").strip().lower()
+    help_dir = _help_docs_dir()
+
+    def _scan() -> Dict[str, Any]:
+        if not help_dir.is_dir():
+            return {"schema": "bach.help-topics.v1", "language": norm_lang, "total_files": 0, "topics": []}
+        all_files = sorted(p for p in help_dir.glob("*.txt") if p.is_file())
+        suffix_lang = f"_{norm_lang}"
+        selected: List[Dict[str, str]] = []
+        for path in all_files:
+            stem = path.stem
+            if norm_lang == "de":
+                if any(stem.endswith(f"_{lg}") for lg in _HELP_LANGS if lg != "de"):
+                    continue
+                topic_id = stem
+            else:
+                if not stem.endswith(suffix_lang):
+                    continue
+                topic_id = stem[: -len(suffix_lang)]
+            summary = ""
+            try:
+                for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[:12]:
+                    s = line.strip().lstrip("#=").strip()
+                    if s and not s.startswith("---"):
+                        summary = s[:140]
+                        break
+            except OSError:
+                pass
+            if needle and needle not in topic_id.lower() and needle not in summary.lower():
+                continue
+            selected.append({"topic": topic_id, "file": path.name, "language": norm_lang, "summary": summary})
+        return {
+            "schema": "bach.help-topics.v1",
+            "language": norm_lang,
+            "total_files": len(all_files),
+            "matched": len(selected),
+            "topics": selected[:limit],
+        }
+
+    return await asyncio.to_thread(_scan)
+
+
+@router.get("/help/topics/{topic}")
+async def get_help_topic_detail(
+    topic: str,
+    lang: str = Query("de", description="de|en|es|ja|ru|zh"),
+):
+    """Liefert den vollständigen Inhalt eines einzelnen lokalen BACH-Hilfethemas (PB-17)."""
+    clean_topic = topic.strip()
+    if not _HELP_TOPIC_RE.fullmatch(clean_topic) or ".." in clean_topic:
+        raise HTTPException(status_code=400, detail="Ungültiger Hilfethemen-Name")
+    norm_lang = lang.strip().lower()
+    if norm_lang not in _HELP_LANGS:
+        norm_lang = "de"
+    help_dir = _help_docs_dir().resolve()
+    candidates = [f"{clean_topic}_{norm_lang}.txt", f"{clean_topic}.txt"] if norm_lang != "de" else [f"{clean_topic}.txt"]
+    for fname in candidates:
+        candidate = (help_dir / fname).resolve()
+        if not candidate.is_relative_to(help_dir) or not candidate.is_file():
+            continue
+        content = await asyncio.to_thread(candidate.read_text, encoding="utf-8", errors="replace")
+        return {
+            "schema": "bach.help-topic-detail.v1",
+            "topic": clean_topic,
+            "language": norm_lang if fname.endswith(f"_{norm_lang}.txt") else "de",
+            "file": candidate.name,
+            "content": content[:65536],
+        }
+    raise HTTPException(status_code=404, detail="Hilfethema nicht gefunden")
 
 
 @router.get("/help/doc-audit")
