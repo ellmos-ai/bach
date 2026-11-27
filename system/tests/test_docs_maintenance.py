@@ -348,6 +348,51 @@ def test_accepted_analysis_is_not_document_repair(fixture):
     assert tasks.adds == 1
 
 
+def test_naive_local_accepted_at_normalized_to_utc_for_public_status(fixture):
+    """task_lease._local_naive writes host-local naive ISO strings to accepted_at.
+
+    Regression: unnormalized naive strings caused readonly_status() to reject the
+    entire healthy status.json with maintenance_receipt_unverified.
+    """
+    from hub._services.docs.maintenance_runtime import _safe_scalar
+
+    dispatcher, _ = fixture
+    dispatcher.dispatch()
+    naive_accepted = "2026-11-20T08:40:50.221681"
+
+    def reader(task_id):
+        res = result(task_id, accepted=True, status="done")
+        res["result"]["accepted_at"] = naive_accepted
+        return res
+
+    dispatcher.result_reader = reader
+    dispatcher.dispatch()
+    item = read_state(dispatcher.state_path)["packages"]["workers"]
+    expected = datetime.fromisoformat(naive_accepted).astimezone(timezone.utc).isoformat()
+    assert item["last_review_success"] == expected
+    assert _safe_scalar("last_review_success", item["last_review_success"]) == expected
+
+
+def test_invalid_accepted_at_remains_fail_closed(fixture):
+    """Negative control: malformed timestamps are never silently cleared to None."""
+    from hub._services.docs.maintenance_runtime import _safe_scalar
+
+    dispatcher, _ = fixture
+    dispatcher.dispatch()
+
+    def reader(task_id):
+        res = result(task_id, accepted=True, status="done")
+        res["result"]["accepted_at"] = "not-a-timestamp"
+        return res
+
+    dispatcher.result_reader = reader
+    dispatcher.dispatch()
+    item = read_state(dispatcher.state_path)["packages"]["workers"]
+    assert item["last_review_success"] == "not-a-timestamp"
+    with pytest.raises(ValueError):
+        _safe_scalar("last_review_success", item["last_review_success"])
+
+
 def test_lock_prevents_task_or_state_write(fixture):
     dispatcher, tasks = fixture
 

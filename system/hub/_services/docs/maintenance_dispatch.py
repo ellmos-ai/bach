@@ -40,6 +40,21 @@ def stamp(now: datetime) -> str:
     return now.astimezone(timezone.utc).isoformat()
 
 
+def normalize_timestamp(value):
+    """Normalize host-local naive ISO timestamps (e.g. task_lease._local_naive) to UTC.
+
+    Aware timestamps are converted to UTC; non-ISO values pass through unchanged so
+    downstream fail-closed validators still reject malformed inputs.
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
 def read_state(path: Path) -> dict:
     if not path.exists():
         return {"schema": STATE_SCHEMA, "packages": {}}
@@ -259,7 +274,9 @@ class DocumentationDispatcher:
             "task_status": observed["status"],
             "result_accepted": accepted,
             "result_id": result.get("result_id") if isinstance(result, dict) else None,
-            "last_review_success": result.get("accepted_at") if accepted else None,
+            "last_review_success": (
+                normalize_timestamp(result.get("accepted_at")) if accepted else None
+            ),
             "last_repair_success": None,
         }
 
