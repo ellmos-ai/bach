@@ -1,5 +1,10 @@
 # BACH Changelog
 
+## Unreleased — Migrationsbackup: Symmetrische Prüfung leerer WAL-Dateien
+
+- `system/core/db.py`: `_same_source_state_with_empty_wal_transition()` akzeptiert nun symmetrisch zu `_same_source_state_for_backup_reuse()` auch den Übergang von einer leeren `0`-Byte-`-wal`-Sidecar-Datei zu `absent` bei unveränderter Datenbank-Identität, wie er nach `_mark_applied([])` auf WAL-Datenbanken beim Schließen des Read-Only-Backup-Handles auftreten kann. Nicht-leere WAL-Änderungen und ausgetauschte leere WAL-Inodes bleiben weiterhin strikt blockiert.
+- Tests `system/tests/test_migration_backup.py`: Regressionstests für `empty -> absent`-WAL-Übergänge und `UpdateHandler._run_migrations` auf WAL-Datenbanken ergänzt.
+
 ## Unreleased — Kredite und Umschuldung über credits-core
 
 - Neuer Handler `bach kredit` (`import`, `list`, `ueberblick`, `vergleich --angebot ZINS/MONATE`) als dünner Adapter auf das Ocean-Modul `credits-core` (Finanzbündel `ellmos-finance-assist-bundle`). Fachlogik und Speicher liegen im Modul, BACH übersetzt nur das Format `umschuldung-state/1` und formatiert die Ausgabe.

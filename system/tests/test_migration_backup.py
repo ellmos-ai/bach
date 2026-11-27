@@ -814,3 +814,89 @@ def test_retention_never_deletes_unverified_runner_looking_backup(tmp_path, monk
     own_backups = [p for p in tmp_path.glob("bach.db.premig-*.bak") if p != foreign]
     assert len(own_backups) == 2
     assert foreign.read_bytes() == b"unverified foreign backup"
+
+
+def test_empty_wal_to_absent_transition_is_accepted_during_backup(tmp_path):
+    """Accept empty-WAL -> absent transitions caused by read-only WAL cleanup."""
+    db_path = tmp_path / "empty-to-absent.db"
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+    conn.execute("CREATE TABLE t (value TEXT)")
+    conn.commit()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+
+    wal_path = tmp_path / "empty-to-absent.db-wal"
+    if not wal_path.exists():
+        wal_path.write_bytes(b"")
+    assert wal_path.exists() and wal_path.stat().st_size == 0
+
+    before = core_db._migration_source_state(db_path)
+    assert before["wal"]["present"] is True
+    assert before["wal"]["size"] == 0
+
+    # Simulate read-only connection close removing the 0-byte WAL sidecar
+    reader = sqlite3.connect(f"file:{db_path.resolve().as_posix()}?mode=ro", uri=True)
+    reader.execute("SELECT COUNT(*) FROM t").fetchone()
+    reader.close()
+    if wal_path.exists():
+        wal_path.unlink()
+
+    after = core_db._migration_source_state(db_path)
+    assert after["db"] == before["db"]
+    assert after["wal"] == {"present": False}
+    assert core_db._same_source_state_with_empty_wal_transition(before, after)
+
+    # Non-empty WAL -> absent must remain rejected (fail-closed)
+    nonempty = {
+        "db": before["db"],
+        "wal": {**before["wal"], "size": 4096, "sha256": hashlib.sha256(b"data").hexdigest()},
+    }
+    assert not core_db._same_source_state_with_empty_wal_transition(nonempty, after)
+
+    # End-to-end backup_before_migration when an empty WAL exists beforehand
+    wal_path.write_bytes(b"")
+    backup = core_db.backup_before_migration(db_path, ["042_archived_memory_source_record.py"])
+    assert backup.exists()
+    assert core_db._quick_check_backup(backup)
+
+
+def test_update_handler_run_migrations_with_existing_wal_db(tmp_path):
+    """UpdateHandler._run_migrations succeeds on WAL DBs after _mark_applied([])."""
+    from hub.update import UpdateHandler
+
+    base_dir = tmp_path / "bach_root"
+    migrations_dir = base_dir / "data" / "schema" / "migrations"
+    migrations_dir.mkdir(parents=True)
+    (base_dir / "data" / "schema" / "schema.sql").write_text(
+        "CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY);", encoding="utf-8"
+    )
+    (migrations_dir / "001_add_col.sql").write_text(
+        "ALTER TABLE t ADD COLUMN note TEXT;", encoding="utf-8"
+    )
+    db_path = tmp_path / "runtime.db"
+    conn = sqlite3.connect(db_path)
+    assert conn.execute("PRAGMA journal_mode=WAL").fetchone()[0].lower() == "wal"
+    conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+
+    # Leave an empty 0-byte WAL file prior to migration run
+    wal_path = tmp_path / "runtime.db-wal"
+    if not wal_path.exists():
+        wal_path.write_bytes(b"")
+
+    handler = UpdateHandler(base_dir)
+    handler.db_path = db_path
+    handler.migrations_dir = migrations_dir
+
+    ok, msg = handler._run_migrations(dry_run=False, only=["001_add_col.sql"])
+    assert ok, msg
+    assert "[OK] 001_add_col.sql" in msg
+
+    check = sqlite3.connect(db_path)
+    try:
+        cols = [r[1] for r in check.execute("PRAGMA table_info(t)")]
+        assert "note" in cols
+    finally:
+        check.close()
