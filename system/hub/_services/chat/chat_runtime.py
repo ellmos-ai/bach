@@ -732,16 +732,46 @@ class FailedAnswer(str):
         from hub._services.chat.local_resource_reserve import LocalReserveError
         if isinstance(exc, LocalReserveError):
             return cls(f"{cls.PREFIX}{safe_message}")
+        cause = getattr(exc, "__cause__", None)
+        if isinstance(cause, BaseException):
+            if isinstance(cause, BackendRequestFailure):
+                detail = normalize_backend_error(getattr(cause, "backend_error", None))
+                if detail is not None and detail["provider"] in ("openrouter", "hermes"):
+                    return cls(f"{cls.PREFIX}{detail['message']}", backend_error=detail)
+                return cls(f"{cls.PREFIX}Anbieterfehler ist nicht verifiziert.")
+            c_reason, c_safe = _local_reserve_failure(cause)
+            if c_reason is not None:
+                return cls(f"{cls.PREFIX}{c_safe}", reason_code=c_reason)
+            if isinstance(cause, LocalReserveError):
+                return cls(f"{cls.PREFIX}{c_safe}")
+        be = normalize_backend_error(getattr(exc, "backend_error", None))
+        if be is None and isinstance(cause, BaseException):
+            be = normalize_backend_error(getattr(cause, "backend_error", None))
+        rc = getattr(exc, "reason_code", None)
+        if not isinstance(rc, str) and isinstance(cause, BaseException):
+            rc = getattr(cause, "reason_code", None)
+        if not isinstance(rc, str):
+            rc = None
+        if be is not None or rc is not None:
+            return cls(
+                f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "),
+                backend_error=be,
+                reason_code=rc,
+            )
         try:
             import httpx
         except ImportError:
             transient_failure = None
         else:
-            transient_failure = (
-                "httpx_read_timeout" if isinstance(exc, httpx.ReadTimeout)
-                # Connecting failed: nothing was sent, so nothing can have escaped.
-                else "httpx_connect_error" if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout))
-                else None
+            def _httpx_transient(err):
+                return (
+                    "httpx_read_timeout" if isinstance(err, httpx.ReadTimeout)
+                    # Connecting failed: nothing was sent, so nothing can have escaped.
+                    else "httpx_connect_error" if isinstance(err, (httpx.ConnectError, httpx.ConnectTimeout))
+                    else None
+                )
+            transient_failure = _httpx_transient(exc) or (
+                _httpx_transient(cause) if isinstance(cause, BaseException) else None
             )
         return cls(
             f"{cls.PREFIX}{type(exc).__name__}: {exc}".rstrip(": "),
@@ -1169,29 +1199,41 @@ class ChatRuntime(_ModuleChatRuntime):
                 or getattr(backend, "manages_own_tools", False)):
             return await self._chat_with_compute_turn(backend, *args, **{**kwargs, "model": model})
 
+        def _profile_ttl_invalid_or_expired(profile):
+            if "expires_at" not in profile or profile.get("expires_at") is None:
+                return False
+            raw_expires = profile.get("expires_at")
+            if not isinstance(raw_expires, str) or not raw_expires.strip():
+                return True
+            try:
+                exp_dt = datetime.fromisoformat(raw_expires.strip().replace("Z", "+00:00"))
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                return exp_dt <= datetime.now(timezone.utc)
+            except ValueError:
+                return True
+
         def profile_identity():
             from hub._services.chat.slots_config import _worker_configuration
             profile = reader()
             if (not isinstance(profile, dict) or profile.get("id") != session.chat_id
                     or profile.get("enabled", True) is not True
                     or profile.get("type") not in {"continuous", "persistent"}
-                    or profile.get("status") != "running"):
+                    or profile.get("status") != "running"
+                    or _profile_ttl_invalid_or_expired(profile)):
                 return None
-            raw_expires = profile.get("expires_at")
-            if isinstance(raw_expires, str) and raw_expires.strip():
-                try:
-                    exp_dt = datetime.fromisoformat(raw_expires.strip().replace("Z", "+00:00"))
-                    if exp_dt.tzinfo is None:
-                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
-                    if exp_dt <= datetime.now(timezone.utc):
-                        return None
-                except ValueError:
-                    return None
             # This is the pure version of this worker's own configuration,
             # including tool grants/mode/budgets. It contains no global catalog
             # version and no mutable nested references to the reader's objects.
             return (profile["id"], profile["type"],
                     _worker_configuration(profile)["configuration_version"])
+
+        entry_profile = reader()
+        if (isinstance(entry_profile, dict)
+                and entry_profile.get("id") == session.chat_id
+                and entry_profile.get("type") in {"continuous", "persistent"}
+                and _profile_ttl_invalid_or_expired(entry_profile)):
+            raise RuntimeError("Cloud-Wiederholung: Worker-TTL abgelaufen oder ungültig")
 
         original_profile = profile_identity()
         if original_profile is None:
@@ -3931,16 +3973,6 @@ Du bist auch für Systemwartung zuständig. Wenn der User danach fragt:
                     )
                 except Exception as e:
                     session.current_tool = ""
-                    from hub._services.llm.backend_errors import normalize_backend_error
-                    src_err = e.__cause__ if getattr(e, "backend_error", None) is None and getattr(e, "__cause__", None) is not None else e
-                    be = normalize_backend_error(getattr(src_err, "backend_error", None))
-                    rc = getattr(e, "reason_code", None) or getattr(src_err, "reason_code", None)
-                    if be is not None or isinstance(rc, str):
-                        return FailedAnswer(
-                            f"{FailedAnswer.PREFIX}{type(e).__name__}: {e}",
-                            backend_error=be,
-                            reason_code=rc if isinstance(rc, str) else None,
-                        )
                     return FailedAnswer.from_exception(e)
                 last_prompt_tokens = None
                 continue
