@@ -138,6 +138,42 @@ def _extract_from_automation_triggers(conn: sqlite3.Connection) -> list[dict[str
     return items
 
 
+def _extract_from_automation_lifecycle(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    columns = _get_table_columns(conn, "automation_lifecycle_entries")
+    if not columns:
+        return items
+
+    try:
+        cursor = conn.cursor()
+        rows = cursor.execute("SELECT * FROM automation_lifecycle_entries ORDER BY id").fetchall()
+        for row in rows:
+            row_dict = dict(row)
+            raw_id = str(row_dict.get("id", ""))
+            title = str(row_dict.get("title") or raw_id)
+            source = "automation-lifecycle"
+            state = str(row_dict.get("state") or "ready")
+            schedule = str(row_dict.get("schedule_spec") or row_dict.get("trigger") or "routine")
+            last_run = row_dict.get("started_at_local") or row_dict.get("started_at_utc")
+            items.append({
+                "id": f"{source}:{raw_id}",
+                "name": raw_id,
+                "title": title,
+                "schedule": schedule,
+                "last_run": str(last_run) if last_run else None,
+                "last_result": str(row_dict.get("last_start_trigger")) if row_dict.get("last_start_trigger") else None,
+                "next_run": None,
+                "enabled": state != "available",
+                "source": source,
+                "kind": str(row_dict.get("family") or "automation_agent"),
+                "origin": "Ocean-Lifecycle",
+            })
+    except Exception as exc:
+        logger.warning("Error reading automation_lifecycle_entries: %s", exc)
+
+    return items
+
+
 def _extract_from_scheduler_jobs(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     columns = _get_table_columns(conn, "scheduler_jobs")
@@ -349,6 +385,12 @@ def list_module_automations(
 
                 if "scheduler_jobs" in tables:
                     for item in _extract_from_scheduler_jobs(conn):
+                        if item["id"] not in seen_ids:
+                            seen_ids.add(item["id"])
+                            items.append(item)
+
+                if "automation_lifecycle_entries" in tables:
+                    for item in _extract_from_automation_lifecycle(conn):
                         if item["id"] not in seen_ids:
                             seen_ids.add(item["id"])
                             items.append(item)

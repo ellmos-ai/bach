@@ -2090,6 +2090,8 @@ try:
     app.include_router(governance_registry_router)
     from gui.api.catalog_projection import router as catalog_projection_router
     app.include_router(catalog_projection_router)
+    from gui.api.automation_lifecycle import router as automation_lifecycle_router
+    app.include_router(automation_lifecycle_router)
 except Exception as e:
     import logging
     logging.getLogger(__name__).warning("System-Agenten-API konnte nicht geladen werden: %s", e)
