@@ -56,7 +56,7 @@ class TestProperties:
 
     def test_get_operations_keys(self, ollama_env):
         ops = ollama_env.get_operations()
-        expected = {"status", "ask", "models", "embed", "set_num_ctx"}
+        expected = {"status", "ask", "models", "embed", "set_num_ctx", "tuning"}
         assert set(ops.keys()) == expected
 
 
