@@ -4,6 +4,7 @@
 
 - `system/core/db.py`: `_same_source_state_with_empty_wal_transition()` akzeptiert nun symmetrisch zu `_same_source_state_for_backup_reuse()` auch den Übergang von einer leeren `0`-Byte-`-wal`-Sidecar-Datei zu `absent` bei unveränderter Datenbank-Identität, wie er nach `_mark_applied([])` auf WAL-Datenbanken beim Schließen des Read-Only-Backup-Handles auftreten kann. Nicht-leere WAL-Änderungen und ausgetauschte leere WAL-Inodes bleiben weiterhin strikt blockiert.
 - Tests `system/tests/test_migration_backup.py`: Regressionstests für `empty -> absent`-WAL-Übergänge und `UpdateHandler._run_migrations` auf WAL-Datenbanken ergänzt.
+- `system/hub/db_sync_readiness.py` (und die Standalone-Kopie `.MODULES/db_sync_readiness`): Quell-Pin `CORE_DB_SHA256` auf den geänderten Stand von `system/core/db.py` nachgezogen; ohne Nachpinnen lehnte `validate_native_db()` jede native DB mit `core-source-pin-mismatch` ab.
 
 ## Unreleased — Kredite und Umschuldung über credits-core
 
