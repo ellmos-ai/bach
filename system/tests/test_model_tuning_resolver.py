@@ -64,9 +64,9 @@ def test_unified_precedence_chain_with_hardware_catalog_and_reserve(tmp_path: Pa
     assert r_res["num_ctx"] == 16384
     assert r_res["num_ctx_source"] == "reserve_policy"
 
-    # 5. Catalog default matches host RAM tier (32 GiB -> 16384/40 turns; 64 GiB -> 32768/50 turns)
+    # 5. Catalog default matches host RAM tier (32 GiB -> 12288/40 turns; 64 GiB -> 32768/50 turns)
     r_32 = resolve_effective_num_ctx("inkling-2-mini:latest", host_ram_gib=32.0)
-    assert r_32["num_ctx"] == 16384
+    assert r_32["num_ctx"] == 12288
     assert r_32["num_ctx_source"] == "catalog_default"
     assert r_32["recommended_max_tool_rounds"] == 40
     assert r_32["confidence_tier"] == "measured_live"

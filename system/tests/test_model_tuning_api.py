@@ -81,17 +81,17 @@ def test_get_and_put_local_model_tuning_roundtrip_and_reset(monkeypatch, tmp_pat
     assert bad_cloud.status_code == 400
 
     # Save manual override and verify both ollama_config.json & resource-reserve.json sync
-    upd = client.put("/api/system/models/tuning", json={"model": "inkling-2-mini:latest", "num_ctx": 12288})
+    upd = client.put("/api/system/models/tuning", json={"model": "inkling-2-mini:latest", "num_ctx": 10240})
     assert upd.status_code == 200
     upd_json = upd.json()
     assert upd_json["ok"] is True
     assert upd_json["reserve_policy_synced"] is True
-    assert upd_json["resolved"]["num_ctx"] == 12288
+    assert upd_json["resolved"]["num_ctx"] == 10240
     assert upd_json["resolved"]["num_ctx_source"] == "model_config"
-    assert json.loads(cfg_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 12288
-    assert json.loads(reserve_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 12288
+    assert json.loads(cfg_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 10240
+    assert json.loads(reserve_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 10240
 
-    # Reset back to hardware default (16384)
+    # Reset back to hardware default (32 GiB tier: 12288 after Metal-OOM evidence)
     rst = client.put(
         "/api/system/models/tuning",
         json={"model": "inkling-2-mini:latest", "reset_to_default": True},
@@ -100,5 +100,5 @@ def test_get_and_put_local_model_tuning_roundtrip_and_reset(monkeypatch, tmp_pat
     rst_json = rst.json()
     assert rst_json["ok"] is True
     assert rst_json["reserve_policy_synced"] is True
-    assert rst_json["resolved"]["num_ctx"] == 16384
-    assert json.loads(reserve_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 16384
+    assert rst_json["resolved"]["num_ctx"] == 12288
+    assert json.loads(reserve_path.read_text(encoding="utf-8"))["models"]["inkling-2-mini:latest"]["num_ctx"] == 12288
