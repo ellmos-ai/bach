@@ -728,19 +728,8 @@ def _migration_source_state(db_path: Path) -> dict:
 
 
 def _same_source_state_with_empty_wal_transition(before: dict, after: dict) -> bool:
-    """Accept an absent-to-empty WAL sidecar, never a data-bearing WAL change."""
-    if before.get("db") != after.get("db"):
-        return False
-    if before.get("wal") == after.get("wal"):
-        return True
-    wal = after.get("wal")
-    return (
-        before.get("wal") == {"present": False}
-        and isinstance(wal, dict)
-        and wal.get("present") is True
-        and wal.get("size") == 0
-        and wal.get("sha256") == hashlib.sha256(b"").hexdigest()
-    )
+    """Accept an absent/empty WAL sidecar transition, never a data-bearing WAL change."""
+    return _same_source_state_for_backup_reuse(before, after)
 
 
 
