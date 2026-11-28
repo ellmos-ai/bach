@@ -1287,3 +1287,114 @@ def try_auto_enroll_created_task(
     except Exception:  # noqa: BLE001 -- Never expose private paths or break task creation.
         _log.warning("auto_enroll_created_task_unavailable task_id=%s reason=enrollment_failed", task_id)
         return {"state": "unavailable", "task_id": task_id, "reason_code": "enrollment_failed", "task_mutated": False}
+
+
+_RESOLVER_SOURCE = re.compile(r"resolver:task:([1-9][0-9]{0,18})\Z")
+_RESOLVER_OPERATOR = "operator:bach-auto-resolver"
+
+
+def _resolver_origin(conn, tid: int) -> int:
+    """Return the origin task of a native block resolver from its audit receipt.
+
+    Authority comes from the native ``task_history`` receipt written in the same
+    transaction as the resolver row (``task_audit._ensure_block_resolver``), not
+    from the resolver's own text fields alone. Both must agree.
+    """
+    cursor = conn.execute("SELECT * FROM tasks WHERE id=?", (tid,))
+    found = cursor.fetchone()
+    if found is None:
+        raise RepositoryBindingError("Task nicht gefunden", reason_code="task_not_found")
+    row = dict(zip([column[0] for column in cursor.description], found))
+    status, claim_id = row.get("status"), row.get("claim_id")
+    created_by, source = row.get("created_by"), row.get("source")
+    match = _RESOLVER_SOURCE.fullmatch(source or "")
+    if created_by != "auto-resolver" or match is None:
+        raise RepositoryBindingError("Keine native Auflöser-Task", reason_code="resolver_provenance_unavailable")
+    if status not in {"pending", "open"} or claim_id:
+        raise RepositoryBindingError("Task ist nicht frei und ausstehend", reason_code="task_not_pending")
+    origin = int(match.group(1))
+    receipts = conn.execute(
+        "SELECT new_value FROM task_history WHERE task_id=? AND action='resolver_task' "
+        "AND changed_by='auto-resolver'", (origin,)).fetchall()
+    for (raw,) in receipts:
+        try:
+            value = json.loads(raw) if isinstance(raw, str) and len(raw) <= 4096 else None
+        except ValueError:
+            value = None
+        if isinstance(value, dict) and value.get("resolver_task_id") == tid:
+            return origin
+    raise RepositoryBindingError("Nativer Auflöser-Beleg fehlt", reason_code="resolver_provenance_unavailable")
+
+
+def enroll_resolver_task_repository(task_id, *, operator: str = _RESOLVER_OPERATOR) -> dict:
+    """Bind a native block resolver to the repository of its bound origin task.
+
+    Resolver tasks are created inside the caller's block transaction, so the
+    creation-time auto-enrollment (which needs a committed row and its own
+    writer) cannot run there. This completes it afterwards: the repository is
+    taken only from the origin task's existing trusted binding; the source pin
+    is verified freshly by ``auto_enroll_created_task`` under the usual fences.
+    """
+    tid = canonical_task_id(task_id)
+    path = registry_path()
+    if not path.exists():
+        return {"state": "skipped", "reason_code": "registry_absent", "task_id": tid, "task_mutated": False}
+    database = Path.home() / ".bach" / "bach.db"
+    try:
+        conn = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=5.0)
+    except sqlite3.Error:
+        raise RepositoryBindingError("Kanonische Lead-Datei nicht erreichbar",
+                                     reason_code="canonical_lead_required") from None
+    try:
+        origin = _resolver_origin(conn, tid)
+    finally:
+        conn.close()
+    parent = load_registry(path)["tasks"].get(str(origin))
+    if parent is None:
+        raise RepositoryBindingError("Ursprungstask hat keine Repo-Bindung", reason_code="parent_binding_missing")
+    return auto_enroll_created_task(tid, repository=parent["repository"], operator=operator)
+
+
+def enroll_pending_resolver_tasks(*, limit: int = 3) -> dict:
+    """Self-healing sweep: bind up to ``limit`` unbound pending native resolvers.
+
+    Never raises; skipped/failed tasks are reported by reason code only.
+    """
+    result = {"enrolled": [], "skipped": {}}
+    try:
+        path = registry_path()
+        database = Path.home() / ".bach" / "bach.db"
+        if not path.exists() or not database.is_file():
+            return result
+        bound = load_registry(path)["tasks"]
+        conn = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=5.0)
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+            claim_filter = " AND (claim_id IS NULL OR claim_id='')" if "claim_id" in columns else ""
+            rows = conn.execute(
+                "SELECT id FROM tasks WHERE created_by='auto-resolver' AND source LIKE 'resolver:task:%' "
+                "AND status IN ('pending','open')" + claim_filter + " ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 -- a sweep must never disturb the caller.
+        return result
+    for (tid,) in rows:
+        if len(result["enrolled"]) >= limit:
+            break
+        if str(tid) in bound:
+            continue
+        try:
+            receipt = enroll_resolver_task_repository(tid)
+            if receipt.get("state") in {"enrolled", "already_bound"}:
+                result["enrolled"].append(tid)
+            else:
+                result["skipped"][tid] = receipt.get("reason_code")
+        except RepositoryBindingError as exc:
+            result["skipped"][tid] = exc.reason_code
+        except Exception:  # noqa: BLE001
+            result["skipped"][tid] = "enrollment_failed"
+    if result["enrolled"] or result["skipped"]:
+        _log.info("resolver_enrollment_sweep enrolled=%s skipped=%s",
+                  result["enrolled"], sorted(set(result["skipped"].values())))
+    return result
