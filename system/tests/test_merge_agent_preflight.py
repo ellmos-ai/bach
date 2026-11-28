@@ -454,3 +454,65 @@ def test_api_draft_returns_violations(api_client):
     assert body["ok"] is False
     assert len(body["violations"]) >= 1
     assert "no_draft" in [v["code"] for v in body["violations"]]
+
+
+# --- Eingabehärtung der Route (Folge-Fix zu #802) -----------------------------
+
+
+def _api_pr() -> dict:
+    return {
+        "repository": "ellmos-ai/bach",
+        "pr_number": 2039,
+        "author_principal": "lukas@bach.local",
+        "head_branch": "feature/merge-agent",
+        "base_branch": "main",
+        "head_sha": HEAD_SHA,
+        "ci_check_states": {"unit": "success"},
+    }
+
+
+@pytest.mark.parametrize("ttl", [1e20, -1e20, True, "abc"])
+def test_api_rejects_out_of_range_or_invalid_ttl(api_client, ttl):
+    response = api_client.post(
+        API_ROUTE,
+        json={
+            "pr": _api_pr(),
+            "approvals": [{"approver": "devon@bach.local", "commit_sha": HEAD_SHA, "ttl_minutes": ttl}],
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_api_rejects_non_finite_ttl(api_client):
+    payload = {
+        "pr": _api_pr(),
+        "approvals": [{"approver": "devon@bach.local", "commit_sha": HEAD_SHA, "ttl_minutes": "__NAN__"}],
+    }
+    body = json.dumps(payload).replace('"__NAN__"', "NaN")
+    response = api_client.post(API_ROUTE, content=body, headers={"content-type": "application/json"})
+    assert response.status_code == 400
+
+
+def test_api_rejects_non_object_secret_provider_reference(api_client):
+    response = api_client.post(
+        API_ROUTE,
+        json={"identity": {"secret_provider_reference": "system"}, "pr": _api_pr()},
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("key", ["github_token", "secret"])
+def test_api_rejects_additional_credential_keys(api_client, key):
+    response = api_client.post(API_ROUTE, json={"pr": _api_pr(), key: "x"})
+    assert response.status_code == 400
+
+
+def test_api_rejects_non_boolean_revoked(api_client):
+    response = api_client.post(
+        API_ROUTE,
+        json={
+            "pr": _api_pr(),
+            "approvals": [{"approver": "devon@bach.local", "commit_sha": HEAD_SHA, "revoked": "false"}],
+        },
+    )
+    assert response.status_code == 400

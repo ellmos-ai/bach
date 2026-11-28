@@ -10,6 +10,7 @@ Referenzen (Provider + Key), nie Geheimniswerte.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List
 
@@ -33,8 +34,10 @@ PREFLIGHT_SCHEMA = "bach.merge-agent-preflight.v1"
 _FORBIDDEN_BODY_KEYS = {
     "credential",
     "credentials",
+    "secret",
     "secret_value",
     "token",
+    "github_token",
     "access_token",
     "api_key",
     "password",
@@ -80,6 +83,11 @@ def _identity_from_body(payload: Any) -> MergeAgentIdentity:
     base = _default_identity()
     principal = str(payload.get("principal") or base.principal).strip()
     reference_payload = payload.get("secret_provider_reference") or {}
+    if not isinstance(reference_payload, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Feld 'identity.secret_provider_reference' muss ein JSON-Objekt sein.",
+        )
     provider = str(reference_payload.get("provider_name") or base.secret.provider_name).strip()
     secret_key = str(reference_payload.get("secret_key") or base.secret.secret_key).strip()
     return MergeAgentIdentity(
@@ -155,13 +163,26 @@ def _approvals_from_body(payload: Any) -> List[MergeApproval]:
         expires_at = None
         ttl_minutes = item.get("ttl_minutes")
         if ttl_minutes is not None:
+            if isinstance(ttl_minutes, bool):
+                raise HTTPException(
+                    status_code=400, detail="Feld 'ttl_minutes' muss eine Zahl sein."
+                )
             try:
                 minutes = float(ttl_minutes)
             except (TypeError, ValueError) as exc:
                 raise HTTPException(
                     status_code=400, detail="Feld 'ttl_minutes' muss eine Zahl sein."
                 ) from exc
-            expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+            if not math.isfinite(minutes):
+                raise HTTPException(
+                    status_code=400, detail="Feld 'ttl_minutes' muss endlich sein."
+                )
+            try:
+                expires_at = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+            except OverflowError as exc:
+                raise HTTPException(
+                    status_code=400, detail="Feld 'ttl_minutes' liegt außerhalb des gültigen Bereichs."
+                ) from exc
         elif item.get("expires_at"):
             raw = str(item.get("expires_at")).strip()
             try:
@@ -174,12 +195,19 @@ def _approvals_from_body(payload: Any) -> List[MergeApproval]:
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
             expires_at = parsed
+        revoked = item.get("revoked", False)
+        if revoked is None:
+            revoked = False
+        if not isinstance(revoked, bool):
+            raise HTTPException(
+                status_code=400, detail="Feld 'revoked' muss ein Boolean sein."
+            )
         approvals.append(
             MergeApproval(
                 approver=approver,
                 commit_sha=commit_sha,
                 expires_at=expires_at,
-                revoked=bool(item.get("revoked") or False),
+                revoked=revoked,
             )
         )
     return approvals
