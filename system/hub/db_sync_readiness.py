@@ -17,7 +17,8 @@ from pathlib import Path
 
 PROFILE = "bach-schema-sql-v1"
 SCHEMA_SHA256 = "16847e6db255429eb4f99d981dad7ca5a9c31c46928bb80dd30ec2910fbe34c4"
-CORE_DB_SHA256 = "358cabd0b58ce5b8146d06db0db446fcb98d664d0592fb695c14bf4ff90df483"
+# Re-pin in both copies (system/hub and .MODULES) whenever core/db.py changes.
+CORE_DB_SHA256 = "f98d74c366efbb3b24cae7dd84fa81705e3ba454f7315a5f808019ade23dbdad"
 # core/db.py baseline_migrations: provenance only, never freshness authority.
 MIGRATIONS_DDL = """CREATE TABLE IF NOT EXISTS _migrations (
     id INTEGER PRIMARY KEY,
