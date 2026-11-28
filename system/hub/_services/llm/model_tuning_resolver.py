@@ -52,7 +52,8 @@ _EMBEDDED_CATALOG: dict[str, Any] = {
             "tool_calling_verified": True,
             "ram_tiers": [
                 {"min_ram_gib": 0, "supported": False, "num_ctx_safe": 4096, "num_ctx_max": 4096, "recommended_max_tool_rounds": 15, "handoff_percent": 75, "kv_headroom_gb": 1.0, "overhead_gb": 1.5},
-                {"min_ram_gib": 32, "supported": True, "num_ctx_safe": 16384, "num_ctx_max": 16384, "recommended_max_tool_rounds": 40, "handoff_percent": 75, "kv_headroom_gb": 1.5, "overhead_gb": 1.5},
+                # 32 GiB: prefill beyond ~12.3k tokens hits reproducible Metal OOM (2026-11-28, 12/12 HTTP 500).
+                {"min_ram_gib": 32, "supported": True, "num_ctx_safe": 12288, "num_ctx_max": 12288, "recommended_max_tool_rounds": 40, "handoff_percent": 75, "kv_headroom_gb": 1.5, "overhead_gb": 1.5},
                 {"min_ram_gib": 48, "supported": True, "num_ctx_safe": 24576, "num_ctx_max": 32768, "recommended_max_tool_rounds": 45, "handoff_percent": 75, "kv_headroom_gb": 3.0, "overhead_gb": 2.0},
                 {"min_ram_gib": 64, "supported": True, "num_ctx_safe": 32768, "num_ctx_max": 65536, "recommended_max_tool_rounds": 50, "handoff_percent": 75, "kv_headroom_gb": 4.0, "overhead_gb": 2.0},
                 {"min_ram_gib": 128, "supported": True, "num_ctx_safe": 65536, "num_ctx_max": 131072, "recommended_max_tool_rounds": 60, "handoff_percent": 75, "kv_headroom_gb": 8.0, "overhead_gb": 3.0},
