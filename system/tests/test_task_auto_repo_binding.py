@@ -335,3 +335,98 @@ def test_lock_fence_failure_fails_closed_without_breaking_task_creation(canonica
     assert body["repository_binding"]["state"] == "unavailable"
     assert body["repository_binding"]["reason_code"] == "registry_fence_unavailable"
     assert canonical_env.reg_path.read_bytes() == before
+
+
+def _blocked_origin_with_resolver(canonical_env, repository):
+    from hub import task_audit
+
+    with sqlite3.connect(canonical_env.db_path) as conn:
+        origin = conn.execute(
+            "INSERT INTO tasks (title, status, priority) VALUES ('Ursprung', 'pending', 'P2')").lastrowid
+        conn.commit()
+    assert registry.auto_enroll_created_task(origin, repository=repository)["state"] == "enrolled"
+    with sqlite3.connect(canonical_env.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (origin,)).fetchone())
+        resolver = task_audit._ensure_block_resolver(
+            conn, origin, row, reason="test block", changed_by="test", now="2026-11-28T10:00:00+00:00")
+        conn.commit()
+    assert resolver is not None
+    return origin, resolver
+
+
+def test_resolver_task_inherits_origin_repository(canonical_env):
+    _origin, resolver = _blocked_origin_with_resolver(canonical_env, "ellmos-ai/open-ocean")
+    with pytest.raises(registry.RepositoryBindingError):
+        registry.resolve_task_repository(resolver)
+
+    receipt = registry.enroll_resolver_task_repository(resolver)
+    assert receipt["state"] == "enrolled"
+    bound = registry.resolve_task_repository(resolver)
+    assert bound.repository == "ellmos-ai/open-ocean"
+    assert bound.source_sha == canonical_env.ocean_sha
+    assert WorkerLeaseBinding._repository_rejection_reason(
+        canonical_env.fetch_task(resolver), {"allowed_repositories": []}) is None
+
+
+def test_resolver_sweep_binds_pending_resolvers_once(canonical_env):
+    _origin, resolver = _blocked_origin_with_resolver(canonical_env, "ellmos-ai/bach")
+    first = registry.enroll_pending_resolver_tasks(limit=3)
+    assert first["enrolled"] == [resolver]
+    assert registry.resolve_task_repository(resolver).repository == "ellmos-ai/bach"
+    second = registry.enroll_pending_resolver_tasks(limit=3)
+    assert second == {"enrolled": [], "skipped": {}}
+
+
+def test_spoofed_resolver_without_native_receipt_is_not_bound(canonical_env):
+    with sqlite3.connect(canonical_env.db_path) as conn:
+        origin = conn.execute(
+            "INSERT INTO tasks (title, status, priority) VALUES ('Ursprung', 'pending', 'P2')").lastrowid
+        conn.commit()
+    registry.auto_enroll_created_task(origin, repository="ellmos-ai/open-ocean")
+    with sqlite3.connect(canonical_env.db_path) as conn:
+        spoof = conn.execute(
+            "INSERT INTO tasks (title, status, priority, created_by, source) "
+            "VALUES ('Gefälscht', 'pending', 'P2', 'auto-resolver', ?)", (f"resolver:task:{origin}",)).lastrowid
+        conn.commit()
+    before = canonical_env.reg_path.read_bytes()
+    with pytest.raises(registry.RepositoryBindingError) as exc:
+        registry.enroll_resolver_task_repository(spoof)
+    assert exc.value.reason_code == "resolver_provenance_unavailable"
+    assert registry.enroll_pending_resolver_tasks()["skipped"] == {spoof: "resolver_provenance_unavailable"}
+    assert canonical_env.reg_path.read_bytes() == before
+
+
+def test_resolver_of_unbound_origin_stays_unbound(canonical_env):
+    from hub import task_audit
+
+    with sqlite3.connect(canonical_env.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        origin = conn.execute(
+            "INSERT INTO tasks (title, status, priority) VALUES ('Ohne Repo', 'pending', 'P2')").lastrowid
+        row = dict(conn.execute("SELECT * FROM tasks WHERE id=?", (origin,)).fetchone())
+        resolver = task_audit._ensure_block_resolver(
+            conn, origin, row, reason="x", changed_by="test", now="2026-11-28T10:00:00+00:00")
+        conn.commit()
+    with pytest.raises(registry.RepositoryBindingError) as exc:
+        registry.enroll_resolver_task_repository(resolver)
+    assert exc.value.reason_code == "parent_binding_missing"
+
+
+def test_heal_hook_skips_borrowed_connections_and_throttles(canonical_env, monkeypatch):
+    from hub._services.chat import worker_lease_binding as wlb
+
+    calls = []
+    monkeypatch.setattr(registry, "enroll_pending_resolver_tasks", lambda **kw: calls.append(kw) or {})
+    monkeypatch.setattr(wlb, "_resolver_heal_last", [0.0])
+    borrowed = SimpleNamespace(mode="local", _conn=object(), _db_path=None)
+    assert wlb._heal_resolver_repository_bindings(borrowed, monotonic=lambda: 1000.0) is None
+    assert calls == []
+
+    monkeypatch.setattr(registry, "_canonical_review_client", lambda _c: (None, None))
+    canonical = SimpleNamespace(mode="local")
+    wlb._heal_resolver_repository_bindings(canonical, monotonic=lambda: 1000.0)
+    wlb._heal_resolver_repository_bindings(canonical, monotonic=lambda: 1050.0)
+    assert calls == [{"limit": wlb._RESOLVER_HEAL_LIMIT}]
+    wlb._heal_resolver_repository_bindings(canonical, monotonic=lambda: 1200.0)
+    assert len(calls) == 2

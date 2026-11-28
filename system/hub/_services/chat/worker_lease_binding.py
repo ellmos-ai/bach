@@ -25,6 +25,38 @@ _EXTERNAL_PROFILE_BACKENDS = frozenset({"openrouter", "ollama-cloud"})
 _REPOSITORY_REJECTIONS = frozenset({"repository_capability_missing", "repository_unverified",
                                     "repository_not_allowed", "repository_changed"})
 
+# Native block resolvers are created inside their origin's block transaction and
+# therefore miss creation-time repo enrollment. A bounded, throttled sweep before
+# queue selection completes it from the origin's trusted binding (never blocks
+# concurrent workers; a failure leaves the fail-closed gate unchanged).
+_RESOLVER_HEAL_INTERVAL_SECONDS = 120.0
+_RESOLVER_HEAL_LIMIT = 3
+_resolver_heal_lock = threading.Lock()
+_resolver_heal_last = [0.0]
+
+
+def _heal_resolver_repository_bindings(client, *, monotonic=None):
+    import time
+    try:
+        # Only the canonical host lead (no borrowed/test connection) may heal.
+        from .worker_repo_registry import _canonical_review_client
+        _canonical_review_client(client)
+    except Exception:  # noqa: BLE001
+        return None
+    now = (monotonic or time.monotonic)()
+    if now - _resolver_heal_last[0] < _RESOLVER_HEAL_INTERVAL_SECONDS:
+        return None
+    if not _resolver_heal_lock.acquire(blocking=False):
+        return None
+    try:
+        _resolver_heal_last[0] = now
+        from .worker_repo_registry import enroll_pending_resolver_tasks
+        return enroll_pending_resolver_tasks(limit=_RESOLVER_HEAL_LIMIT)
+    except Exception:  # noqa: BLE001 -- never disturb task selection.
+        return None
+    finally:
+        _resolver_heal_lock.release()
+
 
 def _external_profile_backend(slot):
     """Return the canonical cloud profile backend, including Ollama's :cloud alias."""
@@ -435,6 +467,8 @@ class WorkerLeaseBinding:
                      review_requested_model=None, **kwargs):
         """Acquire the actual configured/next canonical task before any inference."""
         from .worker_queue_status import QueueObservation
+        if getattr(client, "mode", None) == "local":
+            _heal_resolver_repository_bindings(client)
         observation = QueueObservation(client, observe_queue, kwargs.get("clock"))
         try:
             return cls._acquire_next_observed(client, slot, observation,
