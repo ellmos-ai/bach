@@ -2078,6 +2078,8 @@ try:
     app.include_router(model_sockets_router)
     from gui.api.agent_history import router as agent_history_router
     app.include_router(agent_history_router)
+    from gui.api.merge_agent_preflight import router as merge_agent_preflight_router
+    app.include_router(merge_agent_preflight_router)
     from gui.api.docs_maintenance import router as docs_maintenance_router
     app.include_router(docs_maintenance_router)
     app.include_router(prompt_router)
